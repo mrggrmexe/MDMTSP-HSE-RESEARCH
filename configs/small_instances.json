@@ -1,0 +1,45 @@
+{
+  "profile": "small_instances",
+  "description": "Набор быстрых прогонов для отладки и первичной проверки корректности",
+  "runs": [
+    {
+      "instance_name": "small_case_01",
+      "seed": 1,
+      "depots": 1,
+      "customers": 10,
+      "salesmen": 1,
+      "width": 30.0,
+      "height": 30.0,
+      "return_to_depot": true,
+      "improve_iterations": 5,
+      "output_json": true,
+      "output_path": "results/small_case_01.json"
+    },
+    {
+      "instance_name": "small_case_02",
+      "seed": 2,
+      "depots": 2,
+      "customers": 20,
+      "salesmen": 4,
+      "width": 50.0,
+      "height": 50.0,
+      "return_to_depot": true,
+      "improve_iterations": 20,
+      "output_json": true,
+      "output_path": "results/small_case_02.json"
+    },
+    {
+      "instance_name": "small_case_03",
+      "seed": 3,
+      "depots": 3,
+      "customers": 30,
+      "salesmen": 6,
+      "width": 80.0,
+      "height": 80.0,
+      "return_to_depot": true,
+      "improve_iterations": 30,
+      "output_json": true,
+      "output_path": "results/small_case_03.json"
+    }
+  ]
+}
