@@ -20,6 +20,18 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
 option(MDMTSP_BUILD_TESTS "Build tests" ON)
 
+include(FetchContent)
+
+find_package(nlohmann_json QUIET)
+
+if(NOT nlohmann_json_FOUND)
+    FetchContent_Declare(
+        nlohmann_json
+        URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz
+    )
+    FetchContent_MakeAvailable(nlohmann_json)
+endif()
+
 add_library(mdmtsp_project_options INTERFACE)
 target_compile_features(mdmtsp_project_options INTERFACE cxx_std_20)
 
@@ -63,7 +75,10 @@ target_link_libraries(mdmtsp_tsp
 
 add_library(mdmtsp_core STATIC
     src/mdmtsp/nearest_neighbour.cpp
+    src/mdmtsp/instance_io.cpp
     src/mdmtsp/mdmtsp_solver.hpp
+    src/mdmtsp/instance_io.hpp
+    src/common/instance.hpp
 )
 
 target_include_directories(mdmtsp_core
@@ -75,6 +90,7 @@ target_link_libraries(mdmtsp_core
     PUBLIC
         mdmtsp_project_options
         mdmtsp_tsp
+        nlohmann_json::nlohmann_json
     PRIVATE
         mdmtsp_project_warnings
 )
