@@ -1,5 +1,4 @@
-#include "instance.hpp"
-#include "solution.hpp"
+#include "objective.hpp"
 
 #include <stdexcept>
 
@@ -28,11 +27,8 @@ namespace {
         throw std::invalid_argument("route_objective: route must start at its depot");
     }
 
-    if (instance.return_to_depot) {
-        if (route.nodes.back() != depot_node) {
-            throw std::invalid_argument("route_objective: closed route must end at its depot");
-        }
-        return mdmtsp::route_cost(route.nodes, matrix);
+    if (instance.return_to_depot && route.nodes.back() != depot_node) {
+        throw std::invalid_argument("route_objective: closed route must end at its depot");
     }
 
     return mdmtsp::route_cost(route.nodes, matrix);
@@ -40,7 +36,7 @@ namespace {
 
 }  // namespace
 
-[[nodiscard]] cost_t compute_objective(
+cost_t compute_objective(
     const MDMTSPSolution& solution,
     const MDMTSPInstance& instance,
     const DistanceMatrix& matrix
@@ -52,7 +48,7 @@ namespace {
     return total;
 }
 
-[[nodiscard]] cost_t compute_objective(
+cost_t compute_objective(
     const MDMTSPSolution& solution,
     const MDMTSPInstance& instance
 ) {

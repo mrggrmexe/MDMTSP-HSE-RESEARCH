@@ -3,8 +3,12 @@
 #include <string>
 
 #include "../common/random.hpp"
+#include "assignment.hpp"
 #include "instance.hpp"
+#include "interroute_local_search.hpp"
+#include "objective.hpp"
 #include "solution.hpp"
+#include "validator.hpp"
 
 namespace mdmtsp {
 

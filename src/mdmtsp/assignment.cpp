@@ -1,13 +1,12 @@
-#include "mdmtsp_solver.hpp"
+#include "assignment.hpp"
 
-#include <algorithm>
 #include <limits>
 #include <stdexcept>
 #include <vector>
 
 namespace mdmtsp {
 
-[[nodiscard]] std::vector<depot_id_t> assign_customers_to_nearest_depots(
+std::vector<depot_id_t> assign_customers_to_nearest_depots(
     const MDMTSPInstance& instance
 ) {
     instance.validate_basic();
@@ -37,7 +36,7 @@ namespace mdmtsp {
     return assignment;
 }
 
-[[nodiscard]] std::vector<depot_id_t> assign_salesmen_to_depots_round_robin(
+std::vector<depot_id_t> assign_salesmen_to_depots_round_robin(
     const MDMTSPInstance& instance
 ) {
     instance.validate_basic();

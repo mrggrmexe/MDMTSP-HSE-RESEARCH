@@ -58,7 +58,6 @@ add_library(mdmtsp_tsp STATIC
     src/tsp/nearest_neighbour.cpp
     src/tsp/three_opt.cpp
     src/tsp/two_opt.cpp
-    src/tsp/tsp_solver.hpp
 )
 
 target_include_directories(mdmtsp_tsp
@@ -74,11 +73,13 @@ target_link_libraries(mdmtsp_tsp
 )
 
 add_library(mdmtsp_core STATIC
-    src/mdmtsp/nearest_neighbour.cpp
+    src/mdmtsp/assignment.cpp
     src/mdmtsp/instance_io.cpp
-    src/mdmtsp/mdmtsp_solver.hpp
-    src/mdmtsp/instance_io.hpp
-    src/common/instance.hpp
+    src/mdmtsp/interroute_local_search.cpp
+    src/mdmtsp/nearest_neighbour.cpp
+    src/mdmtsp/objective.cpp
+    src/mdmtsp/solution.cpp
+    src/mdmtsp/validator.cpp
 )
 
 target_include_directories(mdmtsp_core
@@ -105,7 +106,7 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/app/main.cpp")
 
     target_link_libraries(mdmtsp
         PRIVATE
-            mdmtsp_core
+            mdmtsp::core
             mdmtsp_project_options
             mdmtsp_project_warnings
     )

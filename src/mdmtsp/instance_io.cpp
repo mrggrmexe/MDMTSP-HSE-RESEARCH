@@ -8,6 +8,7 @@
 #include <sstream>
 #include <string>
 #include <unordered_set>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -102,6 +103,25 @@ using json = nlohmann::json;
                           " must be an integer");
 }
 
+[[nodiscard]] bool read_bool_with_default(const json& object,
+                                          std::string_view field,
+                                          bool default_value,
+                                          const std::filesystem::path& path,
+                                          std::string_view context) {
+    const auto it = object.find(std::string(field));
+    if (it == object.end()) {
+        return default_value;
+    }
+
+    if (!it->is_boolean()) {
+        throw_parse_error(path,
+                          std::string(context) + "." + std::string(field) +
+                              " must be a boolean");
+    }
+
+    return it->get<bool>();
+}
+
 [[nodiscard]] double read_finite_double(const json& object,
                                         std::string_view field,
                                         const std::filesystem::path& path,
@@ -153,39 +173,136 @@ void ensure_unique_id(std::unordered_set<std::size_t>& used_ids,
     }
 }
 
-[[nodiscard]] Depot parse_depot(const json& value,
-                                std::size_t index,
-                                std::unordered_set<std::size_t>& used_ids,
-                                const std::filesystem::path& path) {
+[[nodiscard]] Point parse_point(const json& value,
+                                const std::filesystem::path& path,
+                                std::string_view context) {
+    Point point;
+    point.x = read_finite_double(value, "x", path, context);
+    point.y = read_finite_double(value, "y", path, context);
+    return point;
+}
+
+[[nodiscard]] Depot parse_new_depot(const json& value,
+                                    std::size_t index,
+                                    std::unordered_set<std::size_t>& used_ids,
+                                    const std::filesystem::path& path) {
     const std::string context = "depots[" + std::to_string(index) + "]";
 
     Depot depot;
     depot.id = read_size_t(value, "id", path, context);
-    depot.point.x = read_finite_double(value, "x", path, context);
-    depot.point.y = read_finite_double(value, "y", path, context);
+    depot.point = parse_point(value, path, context);
     depot.salesmen = read_size_t(value, "salesmen", path, context);
-
-    if (depot.salesmen == 0) {
-        throw_parse_error(path, context + ".salesmen must be positive");
-    }
 
     ensure_unique_id(used_ids, depot.id, path, context);
     return depot;
 }
 
-[[nodiscard]] Customer parse_customer(const json& value,
-                                      std::size_t index,
-                                      std::unordered_set<std::size_t>& used_ids,
-                                      const std::filesystem::path& path) {
+[[nodiscard]] Customer parse_new_customer(const json& value,
+                                          std::size_t index,
+                                          std::unordered_set<std::size_t>& used_ids,
+                                          const std::filesystem::path& path) {
     const std::string context = "customers[" + std::to_string(index) + "]";
 
     Customer customer;
     customer.id = read_size_t(value, "id", path, context);
-    customer.point.x = read_finite_double(value, "x", path, context);
-    customer.point.y = read_finite_double(value, "y", path, context);
+    customer.point = parse_point(value, path, context);
 
     ensure_unique_id(used_ids, customer.id, path, context);
     return customer;
+}
+
+[[nodiscard]] bool looks_like_new_schema(const json& root) {
+    const auto depots_it = root.find("depots");
+    if (depots_it == root.end() || !depots_it->is_array() || depots_it->empty()) {
+        return false;
+    }
+
+    const auto& first = (*depots_it)[0];
+    if (!first.is_object()) {
+        return false;
+    }
+
+    return first.contains("id") || first.contains("salesmen") || root.contains("type") || root.contains("seed");
+}
+
+[[nodiscard]] std::vector<std::size_t> distribute_salesmen_evenly(std::size_t total,
+                                                                  std::size_t depot_count) {
+    std::vector<std::size_t> counts(depot_count, 0);
+
+    if (depot_count == 0) {
+        return counts;
+    }
+
+    const auto base = total / depot_count;
+    const auto rem = total % depot_count;
+
+    for (std::size_t i = 0; i < depot_count; ++i) {
+        counts[i] = base + (i < rem ? 1U : 0U);
+    }
+
+    return counts;
+}
+
+void parse_new_schema(const json& root,
+                      const std::filesystem::path& path,
+                      Instance& instance) {
+    instance.name = read_string_with_default(root, "name", path.stem().string(), path, "root");
+    instance.seed = read_uint64_with_default(root, "seed", 0U, path, "root");
+    instance.return_to_depot = read_bool_with_default(root, "return_to_depot", true, path, "root");
+    instance.distance_type =
+        distance_type_from_string(read_string_with_default(root, "type", "euclidean", path, "root"));
+
+    const json& depots = root.at("depots");
+    const json& customers = root.at("customers");
+
+    instance.depots.reserve(depots.size());
+    instance.customers.reserve(customers.size());
+
+    std::unordered_set<std::size_t> used_ids;
+    used_ids.reserve(depots.size() + customers.size());
+
+    for (std::size_t i = 0; i < depots.size(); ++i) {
+        instance.depots.push_back(parse_new_depot(depots[i], i, used_ids, path));
+    }
+
+    for (std::size_t i = 0; i < customers.size(); ++i) {
+        instance.customers.push_back(parse_new_customer(customers[i], i, used_ids, path));
+    }
+}
+
+void parse_legacy_schema(const json& root,
+                         const std::filesystem::path& path,
+                         Instance& instance) {
+    instance.name = read_string_with_default(root, "name", path.stem().string(), path, "root");
+    instance.seed = read_uint64_with_default(root, "seed", 0U, path, "root");
+    instance.return_to_depot = read_bool_with_default(root, "return_to_depot", true, path, "root");
+    instance.distance_type = DistanceType::Euclidean2D;
+
+    const auto salesman_count = read_size_t(root, "salesman_count", path, "root");
+    const json& depots = root.at("depots");
+    const json& customers = root.at("customers");
+
+    const auto depot_salesmen = distribute_salesmen_evenly(salesman_count, depots.size());
+
+    instance.depots.reserve(depots.size());
+    instance.customers.reserve(customers.size());
+
+    for (std::size_t i = 0; i < depots.size(); ++i) {
+        const std::string context = "depots[" + std::to_string(i) + "]";
+        instance.depots.push_back(Depot{
+            i,
+            parse_point(depots[i], path, context),
+            depot_salesmen[i]
+        });
+    }
+
+    for (std::size_t i = 0; i < customers.size(); ++i) {
+        const std::string context = "customers[" + std::to_string(i) + "]";
+        instance.customers.push_back(Customer{
+            depots.size() + i,
+            parse_point(customers[i], path, context)
+        });
+    }
 }
 
 void validate_root_arrays(const json& root, const std::filesystem::path& path) {
@@ -203,6 +320,18 @@ void validate_root_arrays(const json& root, const std::filesystem::path& path) {
     }
     if (customers.empty()) {
         throw_parse_error(path, "root.customers must not be empty");
+    }
+}
+
+void validate_instance_or_throw(const Instance& instance, const std::filesystem::path& path) {
+    if (instance.depots.empty()) {
+        throw InstanceIoError(make_error_prefix(path) + "instance must contain at least one depot");
+    }
+    if (instance.customers.empty()) {
+        throw InstanceIoError(make_error_prefix(path) + "instance must contain at least one customer");
+    }
+    if (instance.salesmen_count() == 0) {
+        throw InstanceIoError(make_error_prefix(path) + "total number of salesmen must be positive");
     }
 }
 
@@ -236,50 +365,23 @@ Instance load_instance_from_json(const std::filesystem::path& path) {
     validate_root_arrays(root, path);
 
     Instance instance;
-    instance.name = read_string_with_default(root, "name", path.stem().string(), path, "root");
-    instance.seed = read_uint64_with_default(root, "seed", 0U, path, "root");
-    instance.distance_type =
-        distance_type_from_string(read_string_with_default(root, "type", "euclidean", path, "root"));
-
-    const json& depots = root.at("depots");
-    const json& customers = root.at("customers");
-
-    instance.depots.reserve(depots.size());
-    instance.customers.reserve(customers.size());
-
-    std::unordered_set<std::size_t> used_ids;
-    used_ids.reserve(depots.size() + customers.size());
-
-    for (std::size_t i = 0; i < depots.size(); ++i) {
-        instance.depots.push_back(parse_depot(depots[i], i, used_ids, path));
+    if (looks_like_new_schema(root)) {
+        parse_new_schema(root, path, instance);
+    } else {
+        parse_legacy_schema(root, path, instance);
     }
 
-    for (std::size_t i = 0; i < customers.size(); ++i) {
-        instance.customers.push_back(parse_customer(customers[i], i, used_ids, path));
-    }
-
-    if (instance.salesmen_count() == 0) {
-        throw InstanceIoError(make_error_prefix(path) + "total number of salesmen must be positive");
-    }
-
+    validate_instance_or_throw(instance, path);
     return instance;
 }
 
 void save_instance_to_json(const Instance& instance, const std::filesystem::path& path) {
-    if (instance.depots.empty()) {
-        throw InstanceIoError(make_error_prefix(path) + "cannot save instance without depots");
-    }
-    if (instance.customers.empty()) {
-        throw InstanceIoError(make_error_prefix(path) + "cannot save instance without customers");
-    }
+    validate_instance_or_throw(instance, path);
 
     std::unordered_set<std::size_t> used_ids;
     used_ids.reserve(instance.node_count());
 
     for (const Depot& depot : instance.depots) {
-        if (depot.salesmen == 0) {
-            throw InstanceIoError(make_error_prefix(path) + "depot.salesmen must be positive");
-        }
         if (!std::isfinite(depot.point.x) || !std::isfinite(depot.point.y)) {
             throw InstanceIoError(make_error_prefix(path) + "depot coordinates must be finite");
         }
@@ -303,6 +405,8 @@ void save_instance_to_json(const Instance& instance, const std::filesystem::path
     root["name"] = instance.name;
     root["type"] = to_string(instance.distance_type);
     root["seed"] = instance.seed;
+    root["return_to_depot"] = instance.return_to_depot;
+    root["salesman_count"] = instance.salesmen_count();
     root["depots"] = json::array();
     root["customers"] = json::array();
 
@@ -331,7 +435,7 @@ void save_instance_to_json(const Instance& instance, const std::filesystem::path
         }
     }
 
-    const std::filesystem::path tmp_path = path.string() + ".tmp";
+    const auto tmp_path = std::filesystem::path(path.string() + ".tmp");
 
     {
         std::ofstream output(tmp_path, std::ios::trunc);

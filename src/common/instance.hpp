@@ -32,6 +32,7 @@ enum class DistanceType {
 struct Instance {
     std::string name;
     std::uint64_t seed{};
+    bool return_to_depot{true};
     DistanceType distance_type{DistanceType::Euclidean2D};
     std::vector<Depot> depots;
     std::vector<Customer> customers;
