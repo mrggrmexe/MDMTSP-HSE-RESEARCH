@@ -1,0 +1,13 @@
+{
+  "name": "toy_01_single_depot",
+  "return_to_depot": true,
+  "salesman_count": 1,
+  "depots": [
+    { "x": 0.0, "y": 0.0 }
+  ],
+  "customers": [
+    { "x": 1.0, "y": 0.0 },
+    { "x": 2.0, "y": 0.0 },
+    { "x": 3.0, "y": 0.0 }
+  ]
+}

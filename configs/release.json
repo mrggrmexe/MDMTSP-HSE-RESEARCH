@@ -1,0 +1,13 @@
+{
+  "instance_name": "release_run",
+  "seed": 2026,
+  "depots": 3,
+  "customers": 100,
+  "salesmen": 6,
+  "width": 200.0,
+  "height": 200.0,
+  "return_to_depot": true,
+  "improve_iterations": 100,
+  "output_json": true,
+  "output_path": "results/release_run.json"
+}

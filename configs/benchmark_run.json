@@ -1,0 +1,43 @@
+{
+  "profile": "benchmark_run",
+  "description": "Профиль для более серьёзных воспроизводимых прогонов",
+  "global": {
+    "return_to_depot": true,
+    "output_json": true
+  },
+  "runs": [
+    {
+      "instance_name": "benchmark_d2_c100_m4_s101",
+      "seed": 101,
+      "depots": 2,
+      "customers": 100,
+      "salesmen": 4,
+      "width": 200.0,
+      "height": 200.0,
+      "improve_iterations": 100,
+      "output_path": "results/benchmark_d2_c100_m4_s101.json"
+    },
+    {
+      "instance_name": "benchmark_d3_c150_m6_s102",
+      "seed": 102,
+      "depots": 3,
+      "customers": 150,
+      "salesmen": 6,
+      "width": 250.0,
+      "height": 250.0,
+      "improve_iterations": 150,
+      "output_path": "results/benchmark_d3_c150_m6_s102.json"
+    },
+    {
+      "instance_name": "benchmark_d4_c250_m8_s103",
+      "seed": 103,
+      "depots": 4,
+      "customers": 250,
+      "salesmen": 8,
+      "width": 300.0,
+      "height": 300.0,
+      "improve_iterations": 200,
+      "output_path": "results/benchmark_d4_c250_m8_s103.json"
+    }
+  ]
+}

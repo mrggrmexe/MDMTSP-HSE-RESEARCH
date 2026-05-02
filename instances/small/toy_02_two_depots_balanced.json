@@ -1,0 +1,15 @@
+{
+  "name": "toy_02_two_depots_balanced",
+  "return_to_depot": true,
+  "salesman_count": 2,
+  "depots": [
+    { "x": 0.0, "y": 0.0 },
+    { "x": 10.0, "y": 0.0 }
+  ],
+  "customers": [
+    { "x": 1.0, "y": 0.0 },
+    { "x": 2.0, "y": 0.0 },
+    { "x": 11.0, "y": 0.0 },
+    { "x": 12.0, "y": 0.0 }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "instance_name": "debug_run",
+  "seed": 42,
+  "depots": 2,
+  "customers": 12,
+  "salesmen": 4,
+  "width": 50.0,
+  "height": 50.0,
+  "return_to_depot": true,
+  "improve_iterations": 10,
+  "output_json": false,
+  "output_path": ""
+}
