@@ -1,10 +1,10 @@
-#include "mdmtsp_solver.hpp"
+#include "interroute_local_search.hpp"
 
-#include <cstddef>
-#include <limits>
 #include <optional>
 #include <utility>
-#include <vector>
+
+#include "objective.hpp"
+#include "validator.hpp"
 
 namespace mdmtsp {
 
@@ -26,7 +26,13 @@ struct RelocateMove {
     const MDMTSPSalesmanRoute& route,
     const bool return_to_depot
 ) noexcept {
-    return route.nodes.size() - (return_to_depot ? 1U : 0U);
+    if (route.nodes.empty()) {
+        return 0;
+    }
+    if (return_to_depot) {
+        return route.nodes.size() > 0 ? route.nodes.size() - 1 : 0;
+    }
+    return route.nodes.size();
 }
 
 [[nodiscard]] bool can_relocate_from(
@@ -34,13 +40,6 @@ struct RelocateMove {
     const bool return_to_depot
 ) noexcept {
     return route_internal_begin() < route_internal_end(route, return_to_depot);
-}
-
-[[nodiscard]] cost_t route_cost_value(
-    const MDMTSPSalesmanRoute& route,
-    const DistanceMatrix& matrix
-) {
-    return mdmtsp::route_cost(route.nodes, matrix);
 }
 
 [[nodiscard]] std::optional<RelocateMove> find_best_relocate_move(
@@ -61,8 +60,6 @@ struct RelocateMove {
         const auto from_end = route_internal_end(from_route, instance.return_to_depot);
 
         for (std::size_t from_pos = from_begin; from_pos < from_end; ++from_pos) {
-            const auto moved_node = from_route.nodes[from_pos];
-
             for (std::size_t to_route_idx = 0; to_route_idx < solution.routes.size(); ++to_route_idx) {
                 const auto& to_route = solution.routes[to_route_idx];
                 const auto to_begin = route_internal_begin();
@@ -77,7 +74,7 @@ struct RelocateMove {
                     auto candidate = solution;
 
                     auto& candidate_from = candidate.routes[from_route_idx].nodes;
-                    const auto extracted = candidate_from[from_pos];
+                    const auto moved_node = candidate_from[from_pos];
                     candidate_from.erase(
                         candidate_from.begin() + static_cast<std::ptrdiff_t>(from_pos)
                     );
@@ -90,11 +87,10 @@ struct RelocateMove {
 
                     candidate_to.insert(
                         candidate_to.begin() + static_cast<std::ptrdiff_t>(adjusted_to_pos),
-                        extracted
+                        moved_node
                     );
 
-                    const auto feasible = is_solution_feasible(instance, candidate);
-                    if (!feasible) {
+                    if (!is_solution_feasible(instance, candidate)) {
                         continue;
                     }
 
@@ -111,8 +107,6 @@ struct RelocateMove {
                             delta
                         };
                     }
-
-                    (void)moved_node;
                 }
             }
         }
@@ -158,7 +152,7 @@ void improve_interroute_by_relocation(
         return;
     }
 
-    auto matrix = instance.build_distance_matrix();
+    const auto matrix = instance.build_distance_matrix();
 
     if (!is_solution_feasible(instance, solution)) {
         solution.objective = compute_objective(solution, instance, matrix);

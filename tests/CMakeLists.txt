@@ -1,6 +1,5 @@
 set(MDMTSP_TEST_COMMON_LINK_LIBS
-    mdmtsp_core
-    mdmtsp_tsp
+    mdmtsp::core
     mdmtsp_project_options
     mdmtsp_project_warnings
 )
@@ -10,6 +9,12 @@ add_executable(test_instance
 )
 target_link_libraries(test_instance PRIVATE ${MDMTSP_TEST_COMMON_LINK_LIBS})
 add_test(NAME test_instance COMMAND test_instance)
+
+add_executable(test_instance_io
+    test_instance_io.cpp
+)
+target_link_libraries(test_instance_io PRIVATE ${MDMTSP_TEST_COMMON_LINK_LIBS})
+add_test(NAME test_instance_io COMMAND test_instance_io)
 
 add_executable(test_objective
     test_objective.cpp

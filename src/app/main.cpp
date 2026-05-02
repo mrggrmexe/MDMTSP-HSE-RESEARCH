@@ -1,358 +1,440 @@
-#include <cstdlib>
-#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <vector>
 
-#include "../common/random.hpp"
-#include "../common/utils.hpp"
-#include "../mdmtsp/mdmtsp_solver.hpp"
+#include <nlohmann/json.hpp>
 
-namespace fs = std::filesystem;
+#include "common/instance.hpp"
+#include "mdmtsp/instance_io.hpp"
+#include "mdmtsp/mdmtsp_solver.hpp"
 
 namespace {
 
-struct AppConfig {
-    std::string instance_name = "synthetic_mdmtsp";
-    mdmtsp::seed_t seed = 42;
-    std::size_t depot_count = 2;
-    std::size_t customer_count = 20;
-    std::size_t salesman_count = 4;
-    double width = 100.0;
-    double height = 100.0;
-    bool return_to_depot = true;
-    std::size_t improve_iterations = 50;
-    bool output_json = false;
-    std::string output_path;
+namespace fs = std::filesystem;
+using json = nlohmann::json;
+
+struct GenerateSpec {
+    bool requested{false};
+
+    std::string instance_name;
+    std::size_t depots{0};
+    std::size_t customers{0};
+    std::size_t salesmen{0};
+    double width{0.0};
+    double height{0.0};
+
+    bool has_instance_name{false};
+    bool has_depots{false};
+    bool has_customers{false};
+    bool has_salesmen{false};
+    bool has_width{false};
+    bool has_height{false};
 };
 
-[[nodiscard]] bool starts_with(const std::string_view text, const std::string_view prefix) {
-    return text.size() >= prefix.size() && text.substr(0, prefix.size()) == prefix;
+struct CliOptions {
+    fs::path instance_path;
+    bool has_instance_path{false};
+
+    fs::path normalized_output_path;
+    bool write_normalized{false};
+
+    bool json_output{false};
+    fs::path output_path;
+
+    std::optional<std::uint64_t> seed;
+    std::optional<bool> return_to_depot_override;
+    std::size_t improve_iterations{0};
+
+    GenerateSpec generate;
+};
+
+[[noreturn]] void print_usage_and_exit(const char* argv0, int exit_code) {
+    std::ostream& out = exit_code == 0 ? std::cout : std::cerr;
+    out
+        << "Usage:\n"
+        << "  " << argv0 << " --instance <path> [--seed <n>] [--improve-iters <n>]\n"
+        << "           [--json] [--output <path>] [--write-normalized <path>] [--open|--closed]\n"
+        << "  " << argv0 << " --instance-name <name> --seed <n> --depots <n> --customers <n>\n"
+        << "           --salesmen <n> --width <x> --height <y> [--open|--closed]\n"
+        << "           [--improve-iters <n>] [--json] [--output <path>]\n";
+    std::exit(exit_code);
 }
 
-[[nodiscard]] std::string require_value(
-    const int argc,
-    const char* const* argv,
-    int& index,
-    const std::string_view option
-) {
-    if (index + 1 >= argc) {
-        throw std::invalid_argument("missing value for option " + std::string(option));
-    }
-    ++index;
-    return argv[index];
-}
+template <typename T>
+T parse_number(const char* value, const std::string& flag) {
+    std::istringstream in(value);
+    T parsed{};
+    in >> parsed;
 
-template <class UInt>
-[[nodiscard]] UInt parse_unsigned(const std::string& value, const std::string_view option) {
-    std::size_t pos = 0;
-    const auto parsed = std::stoull(value, &pos);
-    if (pos != value.size()) {
-        throw std::invalid_argument("invalid numeric value for option " + std::string(option));
+    if (!in || !in.eof()) {
+        throw std::invalid_argument("invalid value for " + flag + ": " + value);
     }
-    return static_cast<UInt>(parsed);
-}
 
-[[nodiscard]] double parse_double(const std::string& value, const std::string_view option) {
-    std::size_t pos = 0;
-    const auto parsed = std::stod(value, &pos);
-    if (pos != value.size()) {
-        throw std::invalid_argument("invalid floating-point value for option " + std::string(option));
-    }
     return parsed;
 }
 
-void print_usage(std::ostream& out, const char* program_name) {
-    out
-        << "Usage: " << program_name << " [options]\n"
-        << "Options:\n"
-        << "  --instance-name <name>\n"
-        << "  --seed <value>\n"
-        << "  --depots <count>\n"
-        << "  --customers <count>\n"
-        << "  --salesmen <count>\n"
-        << "  --width <value>\n"
-        << "  --height <value>\n"
-        << "  --open\n"
-        << "  --closed\n"
-        << "  --improve-iters <count>\n"
-        << "  --json\n"
-        << "  --output <path>\n"
-        << "  --help\n";
-}
-
-[[nodiscard]] AppConfig parse_arguments(const int argc, const char* const* argv) {
-    AppConfig config;
+CliOptions parse_args(int argc, char** argv) {
+    CliOptions options;
 
     for (int i = 1; i < argc; ++i) {
-        const std::string arg = argv[i];
+        const std::string_view arg{argv[i]};
 
-        if (arg == "--help") {
-            print_usage(std::cout, argv[0]);
-            std::exit(EXIT_SUCCESS);
-        } else if (arg == "--instance-name") {
-            config.instance_name = require_value(argc, argv, i, "--instance-name");
-        } else if (arg == "--seed") {
-            config.seed = parse_unsigned<mdmtsp::seed_t>(require_value(argc, argv, i, "--seed"), "--seed");
-        } else if (arg == "--depots") {
-            config.depot_count = parse_unsigned<std::size_t>(require_value(argc, argv, i, "--depots"), "--depots");
-        } else if (arg == "--customers") {
-            config.customer_count = parse_unsigned<std::size_t>(require_value(argc, argv, i, "--customers"), "--customers");
-        } else if (arg == "--salesmen") {
-            config.salesman_count = parse_unsigned<std::size_t>(require_value(argc, argv, i, "--salesmen"), "--salesmen");
-        } else if (arg == "--width") {
-            config.width = parse_double(require_value(argc, argv, i, "--width"), "--width");
-        } else if (arg == "--height") {
-            config.height = parse_double(require_value(argc, argv, i, "--height"), "--height");
-        } else if (arg == "--open") {
-            config.return_to_depot = false;
-        } else if (arg == "--closed") {
-            config.return_to_depot = true;
-        } else if (arg == "--improve-iters") {
-            config.improve_iterations = parse_unsigned<std::size_t>(
-                require_value(argc, argv, i, "--improve-iters"),
-                "--improve-iters"
-            );
-        } else if (arg == "--json") {
-            config.output_json = true;
-        } else if (arg == "--output") {
-            config.output_path = require_value(argc, argv, i, "--output");
-        } else {
-            throw std::invalid_argument("unknown option: " + arg);
+        if (arg == "--help" || arg == "-h") {
+            print_usage_and_exit(argv[0], 0);
+        }
+
+        if (arg == "--instance") {
+            if (i + 1 >= argc) {
+                throw std::invalid_argument("missing value after --instance");
+            }
+            options.instance_path = argv[++i];
+            options.has_instance_path = true;
+            continue;
+        }
+
+        if (arg == "--write-normalized") {
+            if (i + 1 >= argc) {
+                throw std::invalid_argument("missing value after --write-normalized");
+            }
+            options.normalized_output_path = argv[++i];
+            options.write_normalized = true;
+            continue;
+        }
+
+        if (arg == "--json") {
+            options.json_output = true;
+            continue;
+        }
+
+        if (arg == "--output") {
+            if (i + 1 >= argc) {
+                throw std::invalid_argument("missing value after --output");
+            }
+            options.output_path = argv[++i];
+            continue;
+        }
+
+        if (arg == "--seed") {
+            if (i + 1 >= argc) {
+                throw std::invalid_argument("missing value after --seed");
+            }
+            options.seed = parse_number<std::uint64_t>(argv[++i], "--seed");
+            continue;
+        }
+
+        if (arg == "--improve-iters") {
+            if (i + 1 >= argc) {
+                throw std::invalid_argument("missing value after --improve-iters");
+            }
+            options.improve_iterations = parse_number<std::size_t>(argv[++i], "--improve-iters");
+            continue;
+        }
+
+        if (arg == "--open") {
+            options.return_to_depot_override = false;
+            continue;
+        }
+
+        if (arg == "--closed") {
+            options.return_to_depot_override = true;
+            continue;
+        }
+
+        if (arg == "--instance-name") {
+            if (i + 1 >= argc) {
+                throw std::invalid_argument("missing value after --instance-name");
+            }
+            options.generate.requested = true;
+            options.generate.instance_name = argv[++i];
+            options.generate.has_instance_name = true;
+            continue;
+        }
+
+        if (arg == "--depots") {
+            if (i + 1 >= argc) {
+                throw std::invalid_argument("missing value after --depots");
+            }
+            options.generate.requested = true;
+            options.generate.depots = parse_number<std::size_t>(argv[++i], "--depots");
+            options.generate.has_depots = true;
+            continue;
+        }
+
+        if (arg == "--customers") {
+            if (i + 1 >= argc) {
+                throw std::invalid_argument("missing value after --customers");
+            }
+            options.generate.requested = true;
+            options.generate.customers = parse_number<std::size_t>(argv[++i], "--customers");
+            options.generate.has_customers = true;
+            continue;
+        }
+
+        if (arg == "--salesmen") {
+            if (i + 1 >= argc) {
+                throw std::invalid_argument("missing value after --salesmen");
+            }
+            options.generate.requested = true;
+            options.generate.salesmen = parse_number<std::size_t>(argv[++i], "--salesmen");
+            options.generate.has_salesmen = true;
+            continue;
+        }
+
+        if (arg == "--width") {
+            if (i + 1 >= argc) {
+                throw std::invalid_argument("missing value after --width");
+            }
+            options.generate.requested = true;
+            options.generate.width = parse_number<double>(argv[++i], "--width");
+            options.generate.has_width = true;
+            continue;
+        }
+
+        if (arg == "--height") {
+            if (i + 1 >= argc) {
+                throw std::invalid_argument("missing value after --height");
+            }
+            options.generate.requested = true;
+            options.generate.height = parse_number<double>(argv[++i], "--height");
+            options.generate.has_height = true;
+            continue;
+        }
+
+        throw std::invalid_argument("unknown argument: " + std::string(arg));
+    }
+
+    if (options.has_instance_path && options.generate.requested) {
+        throw std::invalid_argument("use either --instance or generation flags, not both");
+    }
+
+    if (!options.has_instance_path && !options.generate.requested) {
+        throw std::invalid_argument("either --instance or generation flags are required");
+    }
+
+    if (options.write_normalized && !options.has_instance_path) {
+        throw std::invalid_argument("--write-normalized can only be used with --instance");
+    }
+
+    if (!options.has_instance_path) {
+        if (!options.generate.has_instance_name ||
+            !options.generate.has_depots ||
+            !options.generate.has_customers ||
+            !options.generate.has_salesmen ||
+            !options.generate.has_width ||
+            !options.generate.has_height) {
+            throw std::invalid_argument("generation mode requires --instance-name, --depots, --customers, --salesmen, --width, --height");
+        }
+
+        if (!options.seed.has_value()) {
+            throw std::invalid_argument("generation mode requires --seed");
+        }
+
+        if (options.generate.depots == 0 || options.generate.customers == 0 || options.generate.salesmen == 0) {
+            throw std::invalid_argument("depots, customers and salesmen must be positive");
+        }
+
+        if (!(options.generate.width > 0.0) || !(options.generate.height > 0.0)) {
+            throw std::invalid_argument("width and height must be positive");
         }
     }
 
-    if (config.depot_count == 0) {
-        throw std::invalid_argument("depots must be positive");
-    }
-    if (config.customer_count == 0) {
-        throw std::invalid_argument("customers must be positive");
-    }
-    if (config.salesman_count == 0) {
-        throw std::invalid_argument("salesmen must be positive");
-    }
-    if (config.width <= 0.0 || config.height <= 0.0) {
-        throw std::invalid_argument("width and height must be positive");
-    }
-
-    return config;
+    return options;
 }
 
-[[nodiscard]] mdmtsp::MDMTSPInstance make_random_instance(
-    const AppConfig& config,
-    mdmtsp::Random& rng
-) {
+void ensure_parent_directory(const fs::path& path) {
+    const auto parent = path.parent_path();
+    if (!parent.empty()) {
+        fs::create_directories(parent);
+    }
+}
+
+void write_text_file_atomic(const fs::path& path, const std::string& content) {
+    ensure_parent_directory(path);
+
+    const auto tmp = fs::path(path.string() + ".tmp");
+    {
+        std::ofstream out(tmp, std::ios::trunc);
+        if (!out) {
+            throw std::runtime_error("cannot open file for writing: " + path.string());
+        }
+        out << content;
+        if (!out) {
+            throw std::runtime_error("failed to write file: " + path.string());
+        }
+    }
+
+    std::error_code ec;
+    fs::remove(path, ec);
+    ec.clear();
+    fs::rename(tmp, path, ec);
+    if (ec) {
+        fs::remove(tmp);
+        throw std::runtime_error("cannot replace file: " + path.string());
+    }
+}
+
+mdmtsp::MDMTSPInstance to_solver_instance(const mdmtsp::Instance& input) {
+    mdmtsp::MDMTSPInstance output;
+    output.name = input.name;
+    output.salesman_count = input.salesmen_count();
+    output.return_to_depot = input.return_to_depot;
+
+    output.depots.reserve(input.depots.size());
+    for (const auto& depot : input.depots) {
+        output.depots.push_back(mdmtsp::Point2D{depot.point.x, depot.point.y});
+    }
+
+    output.customers.reserve(input.customers.size());
+    for (const auto& customer : input.customers) {
+        output.customers.push_back(mdmtsp::Point2D{customer.point.x, customer.point.y});
+    }
+
+    output.validate_basic();
+    return output;
+}
+
+mdmtsp::MDMTSPInstance make_generated_instance(const GenerateSpec& spec,
+                                               std::uint64_t seed,
+                                               bool return_to_depot) {
+    mdmtsp::Random rng(seed);
+
     mdmtsp::MDMTSPInstance instance;
-    instance.name = config.instance_name;
-    instance.salesman_count = config.salesman_count;
-    instance.return_to_depot = config.return_to_depot;
+    instance.name = spec.instance_name;
+    instance.salesman_count = spec.salesmen;
+    instance.return_to_depot = return_to_depot;
 
-    instance.depots.reserve(config.depot_count);
-    instance.customers.reserve(config.customer_count);
-
-    for (std::size_t i = 0; i < config.depot_count; ++i) {
-        instance.depots.push_back({
-            rng.uniform_real<double>(0.0, config.width),
-            rng.uniform_real<double>(0.0, config.height)
+    instance.depots.reserve(spec.depots);
+    for (std::size_t i = 0; i < spec.depots; ++i) {
+        instance.depots.push_back(mdmtsp::Point2D{
+            rng.uniform_real<double>(0.0, spec.width),
+            rng.uniform_real<double>(0.0, spec.height)
         });
     }
 
-    for (std::size_t i = 0; i < config.customer_count; ++i) {
-        instance.customers.push_back({
-            rng.uniform_real<double>(0.0, config.width),
-            rng.uniform_real<double>(0.0, config.height)
+    instance.customers.reserve(spec.customers);
+    for (std::size_t i = 0; i < spec.customers; ++i) {
+        instance.customers.push_back(mdmtsp::Point2D{
+            rng.uniform_real<double>(0.0, spec.width),
+            rng.uniform_real<double>(0.0, spec.height)
         });
     }
 
+    instance.validate_basic();
     return instance;
 }
 
-[[nodiscard]] std::string escape_json(const std::string& value) {
-    std::ostringstream out;
-
-    for (const char ch : value) {
-        switch (ch) {
-            case '\"':
-                out << "\\\"";
-                break;
-            case '\\':
-                out << "\\\\";
-                break;
-            case '\b':
-                out << "\\b";
-                break;
-            case '\f':
-                out << "\\f";
-                break;
-            case '\n':
-                out << "\\n";
-                break;
-            case '\r':
-                out << "\\r";
-                break;
-            case '\t':
-                out << "\\t";
-                break;
-            default:
-                out << ch;
-                break;
-        }
-    }
-
-    return out.str();
-}
-
-[[nodiscard]] std::string route_to_text(const mdmtsp::MDMTSPSalesmanRoute& route) {
-    std::ostringstream out;
-    out << "salesman=" << route.salesman_id
-        << " depot=" << route.depot_id
-        << " nodes=[";
-
-    for (std::size_t i = 0; i < route.nodes.size(); ++i) {
-        if (i > 0) {
-            out << ' ';
-        }
-        out << route.nodes[i];
-    }
-
-    out << ']';
-    return out.str();
-}
-
-[[nodiscard]] std::string solution_to_text(
-    const AppConfig& config,
-    const mdmtsp::MDMTSPInstance& instance,
-    const mdmtsp::MDMTSPSolution& solution
-) {
-    std::ostringstream out;
-    out << std::fixed << std::setprecision(6);
-    out << "instance: " << instance.name << '\n';
-    out << "seed: " << config.seed << '\n';
-    out << "depots: " << instance.depot_count() << '\n';
-    out << "customers: " << instance.customer_count() << '\n';
-    out << "salesmen: " << instance.salesman_count << '\n';
-    out << "closed_routes: " << (instance.return_to_depot ? "true" : "false") << '\n';
-    out << "objective: " << solution.objective << '\n';
-    out << "feasible: " << (solution.feasible ? "true" : "false") << '\n';
-    out << "status: " << solution.status << '\n';
-    out << "routes:\n";
+json make_result_json(const mdmtsp::MDMTSPInstance& instance,
+                      const mdmtsp::MDMTSPSolution& solution,
+                      std::uint64_t seed) {
+    json result;
+    result["instance_name"] = instance.name;
+    result["seed"] = seed;
+    result["depot_count"] = instance.depot_count();
+    result["customer_count"] = instance.customer_count();
+    result["salesman_count"] = instance.salesman_count;
+    result["return_to_depot"] = instance.return_to_depot;
+    result["objective"] = solution.objective;
+    result["feasible"] = solution.feasible;
+    result["status"] = solution.status;
+    result["route_count"] = solution.routes.size();
+    result["routes"] = json::array();
 
     for (const auto& route : solution.routes) {
-        out << "  - " << route_to_text(route) << '\n';
+        result["routes"].push_back({
+            {"salesman_id", route.salesman_id},
+            {"depot_id", route.depot_id},
+            {"nodes", route.nodes}
+        });
     }
 
-    return out.str();
+    return result;
 }
 
-[[nodiscard]] std::string solution_to_json(
-    const AppConfig& config,
-    const mdmtsp::MDMTSPInstance& instance,
-    const mdmtsp::MDMTSPSolution& solution
-) {
-    std::ostringstream out;
-    out << std::fixed << std::setprecision(6);
-    out << "{\n";
-    out << "  \"instance_name\": \"" << escape_json(instance.name) << "\",\n";
-    out << "  \"seed\": " << config.seed << ",\n";
-    out << "  \"depot_count\": " << instance.depot_count() << ",\n";
-    out << "  \"customer_count\": " << instance.customer_count() << ",\n";
-    out << "  \"salesman_count\": " << instance.salesman_count << ",\n";
-    out << "  \"return_to_depot\": " << (instance.return_to_depot ? "true" : "false") << ",\n";
-    out << "  \"objective\": " << solution.objective << ",\n";
-    out << "  \"feasible\": " << (solution.feasible ? "true" : "false") << ",\n";
-    out << "  \"status\": \"" << escape_json(solution.status) << "\",\n";
-    out << "  \"routes\": [\n";
+void print_text_summary(const mdmtsp::MDMTSPInstance& instance,
+                        const mdmtsp::MDMTSPSolution& solution,
+                        std::optional<fs::path> source_path) {
+    std::cout
+        << "Solved MDMTSP instance\n"
+        << "  name: " << instance.name << '\n';
 
-    for (std::size_t i = 0; i < solution.routes.size(); ++i) {
-        const auto& route = solution.routes[i];
-        out << "    {\n";
-        out << "      \"salesman_id\": " << route.salesman_id << ",\n";
-        out << "      \"depot_id\": " << route.depot_id << ",\n";
-        out << "      \"nodes\": [";
-
-        for (std::size_t j = 0; j < route.nodes.size(); ++j) {
-            if (j > 0) {
-                out << ", ";
-            }
-            out << route.nodes[j];
-        }
-
-        out << "]\n";
-        out << "    }";
-        if (i + 1 != solution.routes.size()) {
-            out << ",";
-        }
-        out << '\n';
+    if (source_path.has_value()) {
+        std::cout << "  source: " << *source_path << '\n';
     }
 
-    out << "  ]\n";
-    out << "}\n";
-
-    return out.str();
-}
-
-void write_output_if_requested(const std::string& content, const std::string& output_path) {
-    if (output_path.empty()) {
-        return;
-    }
-
-    const fs::path path(output_path);
-    if (path.has_parent_path()) {
-        fs::create_directories(path.parent_path());
-    }
-
-    std::ofstream out(path);
-    if (!out) {
-        throw std::runtime_error("failed to open output file: " + output_path);
-    }
-
-    out << content;
-    if (!out) {
-        throw std::runtime_error("failed to write output file: " + output_path);
-    }
+    std::cout
+        << "  depots: " << instance.depot_count() << '\n'
+        << "  customers: " << instance.customer_count() << '\n'
+        << "  salesmen: " << instance.salesman_count << '\n'
+        << "  return_to_depot: " << (instance.return_to_depot ? "true" : "false") << '\n'
+        << "  objective: " << std::fixed << std::setprecision(6) << solution.objective << '\n'
+        << "  feasible: " << (solution.feasible ? "true" : "false") << '\n'
+        << "  status: " << solution.status << '\n'
+        << "  routes: " << solution.routes.size() << '\n';
 }
 
 }  // namespace
 
-int main(int argc, const char* argv[]) {
+int main(int argc, char** argv) {
     try {
-        const auto config = parse_arguments(argc, argv);
+        const CliOptions options = parse_args(argc, argv);
 
-        mdmtsp::Random rng(config.seed);
-        auto instance = make_random_instance(config, rng);
+        mdmtsp::MDMTSPInstance instance;
+        std::optional<fs::path> source_path;
+        std::uint64_t effective_seed = options.seed.value_or(0);
 
-        auto solution = mdmtsp::solve_mdmtsp_nearest_neighbour(instance, rng);
+        if (options.has_instance_path) {
+            auto loaded = mdmtsp::load_instance_from_json(options.instance_path);
 
-        if (config.improve_iterations > 0) {
-            mdmtsp::improve_interroute_by_relocation(
-                solution,
-                instance,
-                config.improve_iterations
-            );
+            if (options.return_to_depot_override.has_value()) {
+                loaded.return_to_depot = *options.return_to_depot_override;
+            }
+
+            if (options.write_normalized) {
+                mdmtsp::save_instance_to_json(loaded, options.normalized_output_path);
+            }
+
+            if (!options.seed.has_value()) {
+                effective_seed = loaded.seed;
+            }
+
+            instance = to_solver_instance(loaded);
+            source_path = options.instance_path;
+        } else {
+            const bool return_to_depot = options.return_to_depot_override.value_or(true);
+            effective_seed = *options.seed;
+            instance = make_generated_instance(options.generate, effective_seed, return_to_depot);
         }
 
-        solution.objective = mdmtsp::compute_objective(solution, instance);
-        solution.feasible = mdmtsp::is_solution_feasible(instance, solution);
-        solution.status = solution.feasible
-            ? "ok"
-            : mdmtsp::validation_report(instance, solution);
+        mdmtsp::Random rng(effective_seed);
+        auto solution = mdmtsp::solve_mdmtsp_nearest_neighbour(instance, rng);
 
-        const auto content = config.output_json
-            ? solution_to_json(config, instance, solution)
-            : solution_to_text(config, instance, solution);
+        if (options.improve_iterations > 0) {
+            mdmtsp::improve_interroute_by_relocation(solution, instance, options.improve_iterations);
+        }
 
-        std::cout << content;
-        write_output_if_requested(content, config.output_path);
+        const bool emit_json = options.json_output || !options.output_path.empty();
+        if (emit_json) {
+            const auto result = make_result_json(instance, solution, effective_seed);
+            const std::string rendered = result.dump(2);
 
-        return solution.feasible ? EXIT_SUCCESS : EXIT_FAILURE;
-    } catch (const std::exception& ex) {
-        std::cerr << "error: " << ex.what() << '\n';
-        return EXIT_FAILURE;
+            if (!options.output_path.empty()) {
+                write_text_file_atomic(options.output_path, rendered + '\n');
+            } else {
+                std::cout << rendered << '\n';
+            }
+        } else {
+            print_text_summary(instance, solution, source_path);
+        }
+
+        return 0;
+    } catch (const std::exception& e) {
+        std::cerr << "error: " << e.what() << '\n';
+        return 1;
     }
 }

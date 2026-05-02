@@ -14,6 +14,7 @@
 #include <limits>
 #include <algorithm>
 #include <utility>
+#include <cmath>
 
 #if !defined(_WIN32)
 #include <unistd.h>
