@@ -105,10 +105,11 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/app/main.cpp")
     )
 
     target_link_libraries(mdmtsp
-        PRIVATE
-            mdmtsp::core
-            mdmtsp_project_options
-            mdmtsp_project_warnings
+    PRIVATE
+        mdmtsp::core
+        nlohmann_json::nlohmann_json
+        mdmtsp_project_options
+        mdmtsp_project_warnings
     )
 endif()
 
