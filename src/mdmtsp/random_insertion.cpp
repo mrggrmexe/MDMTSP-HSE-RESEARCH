@@ -79,7 +79,8 @@ void insert_customer_best_position(
     MDMTSPSolution& solution,
     const node_id_t customer,
     const depot_id_t depot,
-    const DistanceMatrix& matrix
+    const DistanceMatrix& matrix,
+    const bool return_to_depot
 ) {
     std::size_t best_route_idx = 0;
     std::size_t best_insert_pos = 0;
@@ -94,7 +95,8 @@ void insert_customer_best_position(
         }
 
         const std::size_t first_insert_pos = 1;
-        const std::size_t last_insert_pos = route.nodes.size();
+        const std::size_t last_insert_pos =
+            return_to_depot ? route.nodes.size() - 1 : route.nodes.size();
 
         for (std::size_t insert_pos = first_insert_pos; insert_pos <= last_insert_pos; ++insert_pos) {
             const auto delta = insertion_delta(route.nodes, customer, insert_pos, matrix);
@@ -136,7 +138,13 @@ MDMTSPSolution solve_mdmtsp_random_insertion(
         rng.shuffle(customers);
 
         for (const auto customer : customers) {
-            insert_customer_best_position(solution, customer, depot, matrix);
+            insert_customer_best_position(
+                solution,
+                customer,
+                depot,
+                matrix,
+                instance.return_to_depot
+            );
         }
     }
 

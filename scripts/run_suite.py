@@ -17,7 +17,7 @@ from typing import Any
 class SuiteConfig:
     suite_name: str
     description: str
-    algorithm: str
+    algorithms: tuple[str, ...]
     instance_roots: tuple[Path, ...]
     include_globs: tuple[str, ...]
     exclude_globs: tuple[str, ...]
@@ -41,6 +41,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-root", type=Path, default=Path("results/runs"))
     parser.add_argument("--logs-root", type=Path, default=Path("results/logs"))
     parser.add_argument("--summary-path", type=Path)
+    parser.add_argument("--algorithms", nargs="+", help="Override algorithms from config")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--fail-fast", action="store_true")
     return parser.parse_args()
@@ -70,6 +71,26 @@ def write_json_atomic(path: Path, payload: Any) -> None:
     tmp_path.replace(path)
 
 
+def normalize_algorithms(raw_value: Any) -> tuple[str, ...]:
+    if isinstance(raw_value, str):
+        value = raw_value.strip()
+        if not value:
+            raise ValueError("algorithm name must be non-empty")
+        return (value,)
+
+    if isinstance(raw_value, list):
+        values: list[str] = []
+        for item in raw_value:
+            if not isinstance(item, str) or not item.strip():
+                raise ValueError("each algorithm must be a non-empty string")
+            values.append(item.strip())
+        if not values:
+            raise ValueError("field 'algorithms' must not be empty")
+        return tuple(values)
+
+    raise ValueError("field 'algorithms' or 'algorithm' has invalid type")
+
+
 def read_suite_config(config_path: Path, root: Path) -> SuiteConfig:
     data = load_json(config_path)
 
@@ -84,9 +105,12 @@ def read_suite_config(config_path: Path, root: Path) -> SuiteConfig:
     if not isinstance(description, str):
         raise ValueError("field 'description' must be a string")
 
-    algorithm = data.get("algorithm", "nearest_neighbour")
-    if not isinstance(algorithm, str) or not algorithm.strip():
-        raise ValueError("field 'algorithm' must be a non-empty string")
+    if "algorithms" in data:
+        algorithms = normalize_algorithms(data["algorithms"])
+    elif "algorithm" in data:
+        algorithms = normalize_algorithms(data["algorithm"])
+    else:
+        raise ValueError("suite config must contain 'algorithms' or 'algorithm'")
 
     raw_instance_roots = data.get("instance_roots")
     if not isinstance(raw_instance_roots, list) or not raw_instance_roots:
@@ -128,7 +152,7 @@ def read_suite_config(config_path: Path, root: Path) -> SuiteConfig:
     return SuiteConfig(
         suite_name=suite_name.strip(),
         description=description,
-        algorithm=algorithm.strip(),
+        algorithms=algorithms,
         instance_roots=tuple(instance_roots),
         include_globs=include_globs,
         exclude_globs=exclude_globs,
@@ -192,13 +216,14 @@ def instance_output_stem(instance_path: Path, root: Path) -> Path:
     return Path(*parts) if parts else Path(instance_path.stem)
 
 
-def build_run_id(config: SuiteConfig, instance_path: Path, seed: int) -> str:
+def build_run_id(suite_name: str, algorithm: str, instance_path: Path, seed: int) -> str:
     stem = instance_path.stem.replace(" ", "_")
-    return f"{utc_now_compact()}__{config.algorithm}__{stem}__seed_{seed}__{uuid.uuid4().hex[:12]}"
+    return f"{utc_now_compact()}__{suite_name}__{algorithm}__{stem}__seed_{seed}__{uuid.uuid4().hex[:12]}"
 
 
 def build_command(
     executable: Path,
+    algorithm: str,
     config: SuiteConfig,
     instance_path: Path,
     seed: int,
@@ -210,7 +235,7 @@ def build_command(
         "--instance",
         str(instance_path),
         "--algorithm",
-        config.algorithm,
+        algorithm,
         "--seed",
         str(seed),
         "--suite",
@@ -246,6 +271,7 @@ def write_log(path: Path, stdout_text: str, stderr_text: str) -> None:
 def execute_run(
     *,
     executable: Path,
+    algorithm: str,
     config: SuiteConfig,
     instance_path: Path,
     seed: int,
@@ -254,15 +280,16 @@ def execute_run(
     root: Path,
     dry_run: bool,
 ) -> dict[str, Any]:
-    run_id = build_run_id(config, instance_path, seed)
+    run_id = build_run_id(config.suite_name, algorithm, instance_path, seed)
     started_at = utc_now_iso()
 
     rel_stem = instance_output_stem(instance_path, root)
-    output_path = output_root / config.suite_name / config.algorithm / rel_stem / f"{run_id}.json"
-    log_path = logs_root / config.suite_name / config.algorithm / rel_stem / f"{run_id}.log"
+    output_path = output_root / config.suite_name / algorithm / rel_stem / f"{run_id}.json"
+    log_path = logs_root / config.suite_name / algorithm / rel_stem / f"{run_id}.log"
 
     command = build_command(
         executable=executable,
+        algorithm=algorithm,
         config=config,
         instance_path=instance_path,
         seed=seed,
@@ -274,6 +301,8 @@ def execute_run(
     if dry_run:
         return {
             "run_id": run_id,
+            "suite_name": config.suite_name,
+            "algorithm_id": algorithm,
             "instance_name": instance_path.stem,
             "instance_path": str(instance_path),
             "seed": seed,
@@ -304,6 +333,8 @@ def execute_run(
 
     entry: dict[str, Any] = {
         "run_id": run_id,
+        "suite_name": config.suite_name,
+        "algorithm_id": algorithm,
         "instance_name": instance_path.stem,
         "instance_path": str(instance_path),
         "seed": seed,
@@ -336,8 +367,8 @@ def execute_run(
     entry["feasible"] = result.get("feasible")
     entry["solver_status"] = result.get("status")
     entry["solver_wall_time_ms"] = result.get("wall_time_ms")
-    entry["algorithm_id"] = result.get("algorithm_id")
-    entry["suite_name"] = result.get("suite_name")
+    entry["result_algorithm_id"] = result.get("algorithm_id")
+    entry["result_suite_name"] = result.get("suite_name")
 
     return entry
 
@@ -345,6 +376,7 @@ def execute_run(
 def build_summary_payload(
     *,
     config: SuiteConfig,
+    selected_algorithms: tuple[str, ...],
     config_path: Path,
     executable: Path,
     entries: list[dict[str, Any]],
@@ -357,9 +389,10 @@ def build_summary_payload(
     return {
         "suite_name": config.suite_name,
         "description": config.description,
-        "algorithm_id": config.algorithm,
         "config_path": str(config_path),
         "executable": str(executable),
+        "configured_algorithms": list(config.algorithms),
+        "selected_algorithms": list(selected_algorithms),
         "generated_at_utc": utc_now_iso(),
         "dry_run": dry_run,
         "total_runs": len(entries),
@@ -385,46 +418,54 @@ def main() -> int:
         raise FileNotFoundError(f"missing executable: {executable}")
 
     config = read_suite_config(config_path, root)
+
+    selected_algorithms = tuple(args.algorithms) if args.algorithms else config.algorithms
+    if not selected_algorithms:
+        raise RuntimeError("no algorithms selected")
+
     instances = discover_instances(config, root)
     if not instances:
         raise RuntimeError("no JSON instances matched the suite config")
 
     entries: list[dict[str, Any]] = []
 
-    for instance_path in instances:
-        for seed in config.seeds:
-            entry = execute_run(
-                executable=executable,
-                config=config,
-                instance_path=instance_path,
-                seed=seed,
-                output_root=output_root,
-                logs_root=logs_root,
-                root=root,
-                dry_run=args.dry_run,
-            )
-            entries.append(entry)
-
-            line = f"[{entry['status']}] {instance_path.stem} seed={seed}"
-            if entry.get("objective") is not None:
-                line += f" objective={entry['objective']}"
-            print(line)
-
-            if args.fail_fast and entry["status"] == "failed":
-                summary_path = args.summary_path
-                if summary_path is None:
-                    summary_path = Path("results/run_summaries") / f"{config.suite_name}_{utc_now_compact()}.json"
-                write_json_atomic(
-                    resolve_repo_path(root, summary_path),
-                    build_summary_payload(
-                        config=config,
-                        config_path=config_path,
-                        executable=executable,
-                        entries=entries,
-                        dry_run=args.dry_run,
-                    ),
+    for algorithm in selected_algorithms:
+        for instance_path in instances:
+            for seed in config.seeds:
+                entry = execute_run(
+                    executable=executable,
+                    algorithm=algorithm,
+                    config=config,
+                    instance_path=instance_path,
+                    seed=seed,
+                    output_root=output_root,
+                    logs_root=logs_root,
+                    root=root,
+                    dry_run=args.dry_run,
                 )
-                return 1
+                entries.append(entry)
+
+                line = f"[{entry['status']}] {algorithm} | {instance_path.stem} seed={seed}"
+                if entry.get("objective") is not None:
+                    line += f" objective={entry['objective']}"
+                print(line)
+
+                if args.fail_fast and entry["status"] == "failed":
+                    summary_path = args.summary_path
+                    if summary_path is None:
+                        summary_path = Path("results/run_summaries") / f"{config.suite_name}_{utc_now_compact()}.json"
+                    write_json_atomic(
+                        resolve_repo_path(root, summary_path),
+                        build_summary_payload(
+                            config=config,
+                            selected_algorithms=selected_algorithms,
+                            config_path=config_path,
+                            executable=executable,
+                            entries=entries,
+                            dry_run=args.dry_run,
+                        ),
+                    )
+                    return 1
 
     summary_path = args.summary_path
     if summary_path is None:
@@ -434,6 +475,7 @@ def main() -> int:
         resolve_repo_path(root, summary_path),
         build_summary_payload(
             config=config,
+            selected_algorithms=selected_algorithms,
             config_path=config_path,
             executable=executable,
             entries=entries,

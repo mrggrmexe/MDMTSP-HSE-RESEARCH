@@ -1,0 +1,101 @@
+{
+  "algorithm": {
+    "id": "nearest_neighbour",
+    "parameters": {
+      "improve_iterations": 0
+    }
+  },
+  "algorithm_id": "nearest_neighbour",
+  "customer_count": 10,
+  "depot_count": 2,
+  "execution": {
+    "seed": 42,
+    "timestamp_utc": "2026-05-04T16:24:41Z",
+    "wall_time_ms": 0
+  },
+  "feasible": true,
+  "improve_iterations": 0,
+  "instance": {
+    "customer_count": 10,
+    "depot_count": 2,
+    "name": "group_01_instance_04_customers_10_depots_2_salesmen_5",
+    "path": "/Users/mrggrm/Documents/GitHub/MDMTSP-HSE-RESEARCH/instances/research/group_01/g01_i04_c10_d2_m5.json",
+    "return_to_depot": true,
+    "salesman_count": 5
+  },
+  "instance_name": "group_01_instance_04_customers_10_depots_2_salesmen_5",
+  "instance_path": "/Users/mrggrm/Documents/GitHub/MDMTSP-HSE-RESEARCH/instances/research/group_01/g01_i04_c10_d2_m5.json",
+  "objective": 4972.128869360609,
+  "result": {
+    "feasible": true,
+    "objective": 4972.128869360609,
+    "route_count": 5,
+    "status": "ok"
+  },
+  "return_to_depot": true,
+  "route_count": 5,
+  "routes": [
+    {
+      "depot_id": 0,
+      "nodes": [
+        0,
+        6,
+        0
+      ],
+      "salesman_id": 0
+    },
+    {
+      "depot_id": 1,
+      "nodes": [
+        1,
+        10,
+        9,
+        7,
+        2,
+        1
+      ],
+      "salesman_id": 1
+    },
+    {
+      "depot_id": 0,
+      "nodes": [
+        0,
+        11,
+        0
+      ],
+      "salesman_id": 2
+    },
+    {
+      "depot_id": 1,
+      "nodes": [
+        1,
+        4,
+        5,
+        3,
+        8,
+        1
+      ],
+      "salesman_id": 3
+    },
+    {
+      "depot_id": 0,
+      "nodes": [
+        0,
+        0
+      ],
+      "salesman_id": 4
+    }
+  ],
+  "run_id": "20260504T162441Z__research_until_25000__nearest_neighbour__g01_i04_c10_d2_m5__seed_42__9596771b7883",
+  "salesman_count": 5,
+  "schema_version": 1,
+  "seed": 42,
+  "source": {
+    "instance_path": "/Users/mrggrm/Documents/GitHub/MDMTSP-HSE-RESEARCH/instances/research/group_01/g01_i04_c10_d2_m5.json",
+    "mode": "instance_file"
+  },
+  "status": "ok",
+  "suite_name": "research_until_25000",
+  "timestamp_utc": "2026-05-04T16:24:41Z",
+  "wall_time_ms": 0
+}
