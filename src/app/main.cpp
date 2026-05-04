@@ -100,6 +100,10 @@ std::string canonical_algorithm_id(std::string_view value) {
         return "random_insertion";
     }
 
+    if (value == "cheapest_insertion") {
+        return "cheapest_insertion";
+    }
+
     throw std::invalid_argument("unsupported algorithm: " + std::string(value));
 }
 
@@ -480,6 +484,10 @@ mdmtsp::MDMTSPSolution solve_with_algorithm(
 
     if (algorithm_id == "random_insertion") {
         return mdmtsp::solve_mdmtsp_random_insertion(instance, rng);
+    }
+
+    if (algorithm_id == "cheapest_insertion") {
+        return mdmtsp::solve_mdmtsp_cheapest_insertion(instance, rng);
     }
 
     throw std::invalid_argument("unsupported algorithm: " + algorithm_id);

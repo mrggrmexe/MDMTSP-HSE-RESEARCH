@@ -3,7 +3,8 @@
   "description": "Generated research instances up to 25000 customers",
   "algorithms": [
     "nearest_neighbour",
-    "random_insertion"
+    "random_insertion",
+    "cheapest_insertion"
   ],
   "instance_roots": [
     "instances/research/group_01",
