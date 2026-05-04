@@ -1,0 +1,2 @@
+algorithm_id,runs,successful_runs,feasible_runs,feasible_rate,comparable_runs,unique_instances,unique_suites,suite_names,best_run_count,best_instance_coverage,min_gap_to_best_observed,mean_gap_to_best_observed,median_gap_to_best_observed,mean_wall_time_ms,median_wall_time_ms
+nearest_neighbour,5,5,5,1.0,5,5,1,all_instances_nn,5,5,0.0,0.0,0.0,0.0,0.0
