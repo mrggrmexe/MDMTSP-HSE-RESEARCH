@@ -1,3 +1,7 @@
+#include <chrono>
+#include <cctype>
+#include <cstdint>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -11,7 +15,9 @@
 #include <nlohmann/json.hpp>
 
 #include "common/instance.hpp"
+#include "common/random.hpp"
 #include "mdmtsp/instance_io.hpp"
+#include "mdmtsp/interroute_local_search.hpp"
 #include "mdmtsp/mdmtsp_solver.hpp"
 
 namespace {
@@ -51,6 +57,10 @@ struct CliOptions {
     std::optional<bool> return_to_depot_override;
     std::size_t improve_iterations{0};
 
+    std::string algorithm_id{"nearest_neighbour"};
+    std::optional<std::string> suite_name;
+    std::optional<std::string> run_id;
+
     GenerateSpec generate;
 };
 
@@ -58,11 +68,13 @@ struct CliOptions {
     std::ostream& out = exit_code == 0 ? std::cout : std::cerr;
     out
         << "Usage:\n"
-        << "  " << argv0 << " --instance <path> [--seed <n>] [--improve-iters <n>]\n"
-        << "           [--json] [--output <path>] [--write-normalized <path>] [--open|--closed]\n"
+        << "  " << argv0 << " --instance <path> [--algorithm <id>] [--seed <n>] [--improve-iters <n>]\n"
+        << "           [--json] [--output <path>] [--suite <name>] [--run-id <id>]\n"
+        << "           [--write-normalized <path>] [--open|--closed]\n"
         << "  " << argv0 << " --instance-name <name> --seed <n> --depots <n> --customers <n>\n"
-        << "           --salesmen <n> --width <x> --height <y> [--open|--closed]\n"
-        << "           [--improve-iters <n>] [--json] [--output <path>]\n";
+        << "           --salesmen <n> --width <x> --height <y> [--algorithm <id>]\n"
+        << "           [--open|--closed] [--improve-iters <n>] [--json] [--output <path>]\n"
+        << "           [--suite <name>] [--run-id <id>]\n";
     std::exit(exit_code);
 }
 
@@ -77,6 +89,93 @@ T parse_number(const char* value, const std::string& flag) {
     }
 
     return parsed;
+}
+
+std::string canonical_algorithm_id(std::string_view value) {
+    if (value == "nearest_neighbour" || value == "nearest-neighbour" || value == "nn") {
+        return "nearest_neighbour";
+    }
+
+    throw std::invalid_argument("unsupported algorithm: " + std::string(value));
+}
+
+std::string make_safe_token(std::string_view value) {
+    std::string out;
+    out.reserve(value.size());
+
+    bool prev_underscore = false;
+    for (const char ch : value) {
+        const auto uch = static_cast<unsigned char>(ch);
+        if (std::isalnum(uch) != 0U) {
+            out.push_back(static_cast<char>(uch));
+            prev_underscore = false;
+        } else if (!prev_underscore) {
+            out.push_back('_');
+            prev_underscore = true;
+        }
+    }
+
+    while (!out.empty() && out.front() == '_') {
+        out.erase(out.begin());
+    }
+    while (!out.empty() && out.back() == '_') {
+        out.pop_back();
+    }
+
+    if (out.empty()) {
+        out = "run";
+    }
+
+    return out;
+}
+
+std::tm utc_tm_from_time_t(const std::time_t value) {
+    std::tm tm{};
+#if defined(_WIN32)
+    gmtime_s(&tm, &value);
+#else
+    gmtime_r(&value, &tm);
+#endif
+    return tm;
+}
+
+std::string current_timestamp_utc() {
+    const auto now = std::chrono::system_clock::now();
+    const auto time_value = std::chrono::system_clock::to_time_t(now);
+    const auto tm = utc_tm_from_time_t(time_value);
+
+    std::ostringstream out;
+    out << std::put_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
+    return out.str();
+}
+
+std::string compact_timestamp_from_iso(std::string_view iso) {
+    std::string out;
+    out.reserve(iso.size());
+
+    for (const char ch : iso) {
+        const auto uch = static_cast<unsigned char>(ch);
+        if (std::isalnum(uch) != 0U) {
+            out.push_back(static_cast<char>(uch));
+        }
+    }
+
+    return out;
+}
+
+std::string make_fallback_run_id(const std::string& algorithm_id,
+                                 const std::string& instance_name,
+                                 const std::uint64_t seed,
+                                 std::string_view timestamp_utc) {
+    std::ostringstream out;
+    out << compact_timestamp_from_iso(timestamp_utc)
+        << "__"
+        << make_safe_token(algorithm_id)
+        << "__"
+        << make_safe_token(instance_name)
+        << "__seed_"
+        << seed;
+    return out.str();
 }
 
 CliOptions parse_args(int argc, char** argv) {
@@ -143,6 +242,38 @@ CliOptions parse_args(int argc, char** argv) {
 
         if (arg == "--closed") {
             options.return_to_depot_override = true;
+            continue;
+        }
+
+        if (arg == "--algorithm") {
+            if (i + 1 >= argc) {
+                throw std::invalid_argument("missing value after --algorithm");
+            }
+            options.algorithm_id = canonical_algorithm_id(argv[++i]);
+            continue;
+        }
+
+        if (arg == "--suite") {
+            if (i + 1 >= argc) {
+                throw std::invalid_argument("missing value after --suite");
+            }
+            const std::string value = argv[++i];
+            if (value.empty()) {
+                throw std::invalid_argument("--suite must not be empty");
+            }
+            options.suite_name = value;
+            continue;
+        }
+
+        if (arg == "--run-id") {
+            if (i + 1 >= argc) {
+                throw std::invalid_argument("missing value after --run-id");
+            }
+            const std::string value = argv[++i];
+            if (value.empty()) {
+                throw std::invalid_argument("--run-id must not be empty");
+            }
+            options.run_id = value;
             continue;
         }
 
@@ -228,14 +359,19 @@ CliOptions parse_args(int argc, char** argv) {
             !options.generate.has_salesmen ||
             !options.generate.has_width ||
             !options.generate.has_height) {
-            throw std::invalid_argument("generation mode requires --instance-name, --depots, --customers, --salesmen, --width, --height");
+            throw std::invalid_argument(
+                "generation mode requires --instance-name, --depots, --customers, "
+                "--salesmen, --width, --height"
+            );
         }
 
         if (!options.seed.has_value()) {
             throw std::invalid_argument("generation mode requires --seed");
         }
 
-        if (options.generate.depots == 0 || options.generate.customers == 0 || options.generate.salesmen == 0) {
+        if (options.generate.depots == 0 ||
+            options.generate.customers == 0 ||
+            options.generate.salesmen == 0) {
             throw std::invalid_argument("depots, customers and salesmen must be positive");
         }
 
@@ -300,8 +436,8 @@ mdmtsp::MDMTSPInstance to_solver_instance(const mdmtsp::Instance& input) {
 }
 
 mdmtsp::MDMTSPInstance make_generated_instance(const GenerateSpec& spec,
-                                               std::uint64_t seed,
-                                               bool return_to_depot) {
+                                               const std::uint64_t seed,
+                                               const bool return_to_depot) {
     mdmtsp::Random rng(seed);
 
     mdmtsp::MDMTSPInstance instance;
@@ -329,12 +465,37 @@ mdmtsp::MDMTSPInstance make_generated_instance(const GenerateSpec& spec,
     return instance;
 }
 
+mdmtsp::MDMTSPSolution solve_with_algorithm(const std::string& algorithm_id,
+                                            const mdmtsp::MDMTSPInstance& instance,
+                                            mdmtsp::Random& rng) {
+    if (algorithm_id == "nearest_neighbour") {
+        return mdmtsp::solve_mdmtsp_nearest_neighbour(instance, rng);
+    }
+
+    throw std::invalid_argument("unsupported algorithm: " + algorithm_id);
+}
+
 json make_result_json(const mdmtsp::MDMTSPInstance& instance,
                       const mdmtsp::MDMTSPSolution& solution,
-                      std::uint64_t seed) {
+                      const std::uint64_t seed,
+                      const std::string& algorithm_id,
+                      const std::size_t improve_iterations,
+                      const long long wall_time_ms,
+                      const std::string& timestamp_utc,
+                      const std::string& run_id,
+                      const std::optional<std::string>& suite_name,
+                      const std::optional<fs::path>& source_path) {
     json result;
+    result["schema_version"] = 1;
+    result["run_id"] = run_id;
+    result["timestamp_utc"] = timestamp_utc;
+    result["algorithm_id"] = algorithm_id;
+    result["suite_name"] = suite_name.has_value() ? json(*suite_name) : json(nullptr);
+
     result["instance_name"] = instance.name;
+    result["instance_path"] = source_path.has_value() ? json(source_path->string()) : json(nullptr);
     result["seed"] = seed;
+    result["improve_iterations"] = improve_iterations;
     result["depot_count"] = instance.depot_count();
     result["customer_count"] = instance.customer_count();
     result["salesman_count"] = instance.salesman_count;
@@ -343,8 +504,43 @@ json make_result_json(const mdmtsp::MDMTSPInstance& instance,
     result["feasible"] = solution.feasible;
     result["status"] = solution.status;
     result["route_count"] = solution.routes.size();
-    result["routes"] = json::array();
+    result["wall_time_ms"] = wall_time_ms;
 
+    result["algorithm"] = {
+        {"id", algorithm_id},
+        {"parameters", {
+            {"improve_iterations", improve_iterations}
+        }}
+    };
+
+    result["instance"] = {
+        {"name", instance.name},
+        {"path", source_path.has_value() ? json(source_path->string()) : json(nullptr)},
+        {"depot_count", instance.depot_count()},
+        {"customer_count", instance.customer_count()},
+        {"salesman_count", instance.salesman_count},
+        {"return_to_depot", instance.return_to_depot}
+    };
+
+    result["execution"] = {
+        {"seed", seed},
+        {"wall_time_ms", wall_time_ms},
+        {"timestamp_utc", timestamp_utc}
+    };
+
+    result["source"] = {
+        {"mode", source_path.has_value() ? "instance_file" : "generated"},
+        {"instance_path", source_path.has_value() ? json(source_path->string()) : json(nullptr)}
+    };
+
+    result["result"] = {
+        {"objective", solution.objective},
+        {"feasible", solution.feasible},
+        {"status", solution.status},
+        {"route_count", solution.routes.size()}
+    };
+
+    result["routes"] = json::array();
     for (const auto& route : solution.routes) {
         result["routes"].push_back({
             {"salesman_id", route.salesman_id},
@@ -358,16 +554,28 @@ json make_result_json(const mdmtsp::MDMTSPInstance& instance,
 
 void print_text_summary(const mdmtsp::MDMTSPInstance& instance,
                         const mdmtsp::MDMTSPSolution& solution,
-                        std::optional<fs::path> source_path) {
+                        const std::string& algorithm_id,
+                        const std::uint64_t seed,
+                        const long long wall_time_ms,
+                        const std::string& run_id,
+                        const std::optional<fs::path>& source_path,
+                        const std::optional<fs::path>& normalized_output_path) {
     std::cout
         << "Solved MDMTSP instance\n"
+        << "  run_id: " << run_id << '\n'
+        << "  algorithm: " << algorithm_id << '\n'
         << "  name: " << instance.name << '\n';
 
     if (source_path.has_value()) {
         std::cout << "  source: " << *source_path << '\n';
     }
 
+    if (normalized_output_path.has_value()) {
+        std::cout << "  normalized_copy: " << *normalized_output_path << '\n';
+    }
+
     std::cout
+        << "  seed: " << seed << '\n'
         << "  depots: " << instance.depot_count() << '\n'
         << "  customers: " << instance.customer_count() << '\n'
         << "  salesmen: " << instance.salesman_count << '\n'
@@ -375,7 +583,8 @@ void print_text_summary(const mdmtsp::MDMTSPInstance& instance,
         << "  objective: " << std::fixed << std::setprecision(6) << solution.objective << '\n'
         << "  feasible: " << (solution.feasible ? "true" : "false") << '\n'
         << "  status: " << solution.status << '\n'
-        << "  routes: " << solution.routes.size() << '\n';
+        << "  routes: " << solution.routes.size() << '\n'
+        << "  wall_time_ms: " << wall_time_ms << '\n';
 }
 
 }  // namespace
@@ -386,6 +595,7 @@ int main(int argc, char** argv) {
 
         mdmtsp::MDMTSPInstance instance;
         std::optional<fs::path> source_path;
+        std::optional<fs::path> normalized_output_path;
         std::uint64_t effective_seed = options.seed.value_or(0);
 
         if (options.has_instance_path) {
@@ -397,6 +607,7 @@ int main(int argc, char** argv) {
 
             if (options.write_normalized) {
                 mdmtsp::save_instance_to_json(loaded, options.normalized_output_path);
+                normalized_output_path = options.normalized_output_path;
             }
 
             if (!options.seed.has_value()) {
@@ -411,16 +622,44 @@ int main(int argc, char** argv) {
             instance = make_generated_instance(options.generate, effective_seed, return_to_depot);
         }
 
+        const std::string timestamp_utc = current_timestamp_utc();
+        const std::string run_id = options.run_id.value_or(
+            make_fallback_run_id(options.algorithm_id, instance.name, effective_seed, timestamp_utc)
+        );
+
         mdmtsp::Random rng(effective_seed);
-        auto solution = mdmtsp::solve_mdmtsp_nearest_neighbour(instance, rng);
+
+        const auto started = std::chrono::steady_clock::now();
+        auto solution = solve_with_algorithm(options.algorithm_id, instance, rng);
 
         if (options.improve_iterations > 0) {
-            mdmtsp::improve_interroute_by_relocation(solution, instance, options.improve_iterations);
+            mdmtsp::improve_interroute_by_relocation(
+                solution,
+                instance,
+                options.improve_iterations
+            );
         }
+
+        const auto finished = std::chrono::steady_clock::now();
+        const auto wall_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            finished - started
+        ).count();
 
         const bool emit_json = options.json_output || !options.output_path.empty();
         if (emit_json) {
-            const auto result = make_result_json(instance, solution, effective_seed);
+            const auto result = make_result_json(
+                instance,
+                solution,
+                effective_seed,
+                options.algorithm_id,
+                options.improve_iterations,
+                static_cast<long long>(wall_time_ms),
+                timestamp_utc,
+                run_id,
+                options.suite_name,
+                source_path
+            );
+
             const std::string rendered = result.dump(2);
 
             if (!options.output_path.empty()) {
@@ -429,7 +668,16 @@ int main(int argc, char** argv) {
                 std::cout << rendered << '\n';
             }
         } else {
-            print_text_summary(instance, solution, source_path);
+            print_text_summary(
+                instance,
+                solution,
+                options.algorithm_id,
+                effective_seed,
+                static_cast<long long>(wall_time_ms),
+                run_id,
+                source_path,
+                normalized_output_path
+            );
         }
 
         return 0;

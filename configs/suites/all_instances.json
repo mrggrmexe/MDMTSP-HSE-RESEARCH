@@ -1,0 +1,16 @@
+{
+  "suite_name": "all_instances_nn",
+  "description": "Массовый прогон nearest_neighbour по всем JSON-инстансам репозитория.",
+  "algorithm": "nearest_neighbour",
+  "instance_roots": [
+    "instances"
+  ],
+  "include_globs": [
+    "**/*.json"
+  ],
+  "exclude_globs": [],
+  "seeds": [
+    42
+  ],
+  "improve_iterations": 0
+}

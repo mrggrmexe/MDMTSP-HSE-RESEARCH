@@ -1,0 +1,16 @@
+{
+  "suite_name": "small_all_nn",
+  "description": "Быстрый suite для прогона nearest_neighbour по всем малым инстансам.",
+  "algorithm": "nearest_neighbour",
+  "instance_roots": [
+    "instances/small"
+  ],
+  "include_globs": [
+    "*.json"
+  ],
+  "exclude_globs": [],
+  "seeds": [
+    42
+  ],
+  "improve_iterations": 0
+}
