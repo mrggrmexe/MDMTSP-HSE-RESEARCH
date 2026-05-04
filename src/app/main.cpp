@@ -96,6 +96,10 @@ std::string canonical_algorithm_id(std::string_view value) {
         return "nearest_neighbour";
     }
 
+    if (value == "random_insertion" || value == "random-insertion" || value == "ri") {
+        return "random_insertion";
+    }
+
     throw std::invalid_argument("unsupported algorithm: " + std::string(value));
 }
 
@@ -465,11 +469,17 @@ mdmtsp::MDMTSPInstance make_generated_instance(const GenerateSpec& spec,
     return instance;
 }
 
-mdmtsp::MDMTSPSolution solve_with_algorithm(const std::string& algorithm_id,
-                                            const mdmtsp::MDMTSPInstance& instance,
-                                            mdmtsp::Random& rng) {
+mdmtsp::MDMTSPSolution solve_with_algorithm(
+    const std::string& algorithm_id,
+    const mdmtsp::MDMTSPInstance& instance,
+    mdmtsp::Random& rng
+) {
     if (algorithm_id == "nearest_neighbour") {
         return mdmtsp::solve_mdmtsp_nearest_neighbour(instance, rng);
+    }
+
+    if (algorithm_id == "random_insertion") {
+        return mdmtsp::solve_mdmtsp_random_insertion(instance, rng);
     }
 
     throw std::invalid_argument("unsupported algorithm: " + algorithm_id);

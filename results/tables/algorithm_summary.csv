@@ -1,0 +1,3 @@
+algorithm_id,runs,successful_runs,feasible_runs,feasible_rate,comparable_runs,unique_instances,unique_suites,suite_names,best_run_count,best_instance_coverage,min_gap_to_best_observed,mean_gap_to_best_observed,median_gap_to_best_observed,mean_wall_time_ms,median_wall_time_ms
+random_insertion,47,47,47,1.0,47,47,1,research_until_25000,47,47,0.0,0.0,0.0,1183.2553191489362,0.0
+nearest_neighbour,47,47,47,1.0,47,47,1,research_until_25000,0,0,0.01690208176053238,0.9884333044146744,1.0085288974147413,1102.531914893617,0.0
