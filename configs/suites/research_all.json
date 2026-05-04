@@ -1,0 +1,20 @@
+{
+  "suite_name": "research_all",
+  "description": "All generated research instances",
+  "algorithms": [
+    "nearest_neighbour",
+    "random_insertion",
+    "cheapest_insertion"
+  ],
+  "instance_roots": [
+    "instances/research"
+  ],
+  "include_globs": [
+    "**/*.json"
+  ],
+  "exclude_globs": [],
+  "seeds": [
+    42
+  ],
+  "improve_iterations": 0
+}

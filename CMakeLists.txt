@@ -74,10 +74,12 @@ target_link_libraries(mdmtsp_tsp
 
 add_library(mdmtsp_core STATIC
     src/mdmtsp/assignment.cpp
+    src/mdmtsp/cheapest_insertion.cpp
     src/mdmtsp/instance_io.cpp
     src/mdmtsp/interroute_local_search.cpp
     src/mdmtsp/nearest_neighbour.cpp
     src/mdmtsp/objective.cpp
+    src/mdmtsp/random_insertion.cpp
     src/mdmtsp/solution.cpp
     src/mdmtsp/validator.cpp
 )

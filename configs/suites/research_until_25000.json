@@ -1,0 +1,26 @@
+{
+  "suite_name": "research_until_25000",
+  "description": "Generated research instances up to 25000 customers",
+  "algorithms": [
+    "nearest_neighbour",
+    "random_insertion",
+    "cheapest_insertion"
+  ],
+  "instance_roots": [
+    "instances/research/group_01",
+    "instances/research/group_02",
+    "instances/research/group_03",
+    "instances/research/group_04",
+    "instances/research/group_05",
+    "instances/research/group_06",
+    "instances/research/group_07"
+  ],
+  "include_globs": [
+    "*.json"
+  ],
+  "exclude_globs": [],
+  "seeds": [
+    42
+  ],
+  "improve_iterations": 0
+}

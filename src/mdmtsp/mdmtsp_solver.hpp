@@ -24,5 +24,14 @@ public:
     const MDMTSPInstance& instance,
     Random& rng
 );
+[[nodiscard]] MDMTSPSolution solve_mdmtsp_random_insertion(
+    const MDMTSPInstance& instance,
+    Random& rng
+);
+
+[[nodiscard]] MDMTSPSolution solve_mdmtsp_cheapest_insertion(
+    const MDMTSPInstance& instance,
+    Random& rng
+);
 
 }  // namespace mdmtsp
