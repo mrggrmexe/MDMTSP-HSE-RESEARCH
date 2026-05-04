@@ -1,0 +1,62 @@
+{
+  "algorithm": {
+    "id": "nearest_neighbour",
+    "parameters": {
+      "improve_iterations": 0
+    }
+  },
+  "algorithm_id": "nearest_neighbour",
+  "customer_count": 3,
+  "depot_count": 1,
+  "execution": {
+    "seed": 42,
+    "timestamp_utc": "2026-05-04T00:36:57Z",
+    "wall_time_ms": 0
+  },
+  "feasible": true,
+  "improve_iterations": 0,
+  "instance": {
+    "customer_count": 3,
+    "depot_count": 1,
+    "name": "toy_01_single_depot",
+    "path": "/Users/mrggrm/Documents/GitHub/MDMTSP-HSE-RESEARCH/instances/small/toy_01_single_depot.json",
+    "return_to_depot": true,
+    "salesman_count": 1
+  },
+  "instance_name": "toy_01_single_depot",
+  "instance_path": "/Users/mrggrm/Documents/GitHub/MDMTSP-HSE-RESEARCH/instances/small/toy_01_single_depot.json",
+  "objective": 6.0,
+  "result": {
+    "feasible": true,
+    "objective": 6.0,
+    "route_count": 1,
+    "status": "ok"
+  },
+  "return_to_depot": true,
+  "route_count": 1,
+  "routes": [
+    {
+      "depot_id": 0,
+      "nodes": [
+        0,
+        1,
+        2,
+        3,
+        0
+      ],
+      "salesman_id": 0
+    }
+  ],
+  "run_id": "20260504T003657Z__nearest_neighbour__toy_01_single_depot__seed_42__bcadaa12dfeb",
+  "salesman_count": 1,
+  "schema_version": 1,
+  "seed": 42,
+  "source": {
+    "instance_path": "/Users/mrggrm/Documents/GitHub/MDMTSP-HSE-RESEARCH/instances/small/toy_01_single_depot.json",
+    "mode": "instance_file"
+  },
+  "status": "ok",
+  "suite_name": "all_instances_nn",
+  "timestamp_utc": "2026-05-04T00:36:57Z",
+  "wall_time_ms": 0
+}

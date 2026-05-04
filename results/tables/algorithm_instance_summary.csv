@@ -1,6 +1,6 @@
 algorithm_id,instance_name,runs,successful_runs,feasible_runs,feasible_rate,suite_names,depot_count,customer_count,salesman_count,return_to_depot,best_objective,mean_objective,median_objective,min_gap_to_best_observed,mean_gap_to_best_observed,median_gap_to_best_observed,mean_wall_time_ms,median_wall_time_ms
-nearest_neighbour,sample_euclidean_10_2x2,1,1,1,1.0,all_instances_nn,2,10,4,True,355.7988423196637,355.7988423196637,355.7988423196637,0.0,0.0,0.0,0.0,0.0
-nearest_neighbour,toy_01_single_depot,1,1,1,1.0,all_instances_nn,1,3,1,True,6.0,6.0,6.0,0.0,0.0,0.0,0.0,0.0
-nearest_neighbour,toy_02_two_depots_balanced,1,1,1,1.0,all_instances_nn,2,4,2,True,8.0,8.0,8.0,0.0,0.0,0.0,0.0,0.0
-nearest_neighbour,toy_03_two_depots_unbalanced,1,1,1,1.0,all_instances_nn,2,6,3,True,22.84589730478893,22.84589730478893,22.84589730478893,0.0,0.0,0.0,0.0,0.0
-nearest_neighbour,toy_04_three_depots_sparse,1,1,1,1.0,all_instances_nn,3,7,4,True,32.379424717875565,32.379424717875565,32.379424717875565,0.0,0.0,0.0,0.0,0.0
+nearest_neighbour,sample_euclidean_10_2x2,2,2,2,1.0,all_instances_nn,2,10,4,True,355.7988423196637,355.7988423196637,355.7988423196637,0.0,0.0,0.0,0.0,0.0
+nearest_neighbour,toy_01_single_depot,2,2,2,1.0,all_instances_nn,1,3,1,True,6.0,6.0,6.0,0.0,0.0,0.0,0.0,0.0
+nearest_neighbour,toy_02_two_depots_balanced,2,2,2,1.0,all_instances_nn,2,4,2,True,8.0,8.0,8.0,0.0,0.0,0.0,0.0,0.0
+nearest_neighbour,toy_03_two_depots_unbalanced,2,2,2,1.0,all_instances_nn,2,6,3,True,22.84589730478893,22.84589730478893,22.84589730478893,0.0,0.0,0.0,0.0,0.0
+nearest_neighbour,toy_04_three_depots_sparse,2,2,2,1.0,all_instances_nn,3,7,4,True,32.379424717875565,32.379424717875565,32.379424717875565,0.0,0.0,0.0,0.0,0.0
