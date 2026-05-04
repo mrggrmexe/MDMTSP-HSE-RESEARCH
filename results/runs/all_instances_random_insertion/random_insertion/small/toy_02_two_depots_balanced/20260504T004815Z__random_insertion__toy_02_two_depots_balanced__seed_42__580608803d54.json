@@ -1,0 +1,71 @@
+{
+  "algorithm": {
+    "id": "random_insertion",
+    "parameters": {
+      "improve_iterations": 0
+    }
+  },
+  "algorithm_id": "random_insertion",
+  "customer_count": 4,
+  "depot_count": 2,
+  "execution": {
+    "seed": 42,
+    "timestamp_utc": "2026-05-04T00:48:15Z",
+    "wall_time_ms": 0
+  },
+  "feasible": true,
+  "improve_iterations": 0,
+  "instance": {
+    "customer_count": 4,
+    "depot_count": 2,
+    "name": "toy_02_two_depots_balanced",
+    "path": "/Users/mrggrm/Documents/GitHub/MDMTSP-HSE-RESEARCH/instances/small/toy_02_two_depots_balanced.json",
+    "return_to_depot": true,
+    "salesman_count": 2
+  },
+  "instance_name": "toy_02_two_depots_balanced",
+  "instance_path": "/Users/mrggrm/Documents/GitHub/MDMTSP-HSE-RESEARCH/instances/small/toy_02_two_depots_balanced.json",
+  "objective": 8.0,
+  "result": {
+    "feasible": true,
+    "objective": 8.0,
+    "route_count": 2,
+    "status": "ok"
+  },
+  "return_to_depot": true,
+  "route_count": 2,
+  "routes": [
+    {
+      "depot_id": 0,
+      "nodes": [
+        0,
+        3,
+        2,
+        0
+      ],
+      "salesman_id": 0
+    },
+    {
+      "depot_id": 1,
+      "nodes": [
+        1,
+        5,
+        4,
+        1
+      ],
+      "salesman_id": 1
+    }
+  ],
+  "run_id": "20260504T004815Z__random_insertion__toy_02_two_depots_balanced__seed_42__580608803d54",
+  "salesman_count": 2,
+  "schema_version": 1,
+  "seed": 42,
+  "source": {
+    "instance_path": "/Users/mrggrm/Documents/GitHub/MDMTSP-HSE-RESEARCH/instances/small/toy_02_two_depots_balanced.json",
+    "mode": "instance_file"
+  },
+  "status": "ok",
+  "suite_name": "all_instances_random_insertion",
+  "timestamp_utc": "2026-05-04T00:48:15Z",
+  "wall_time_ms": 0
+}
