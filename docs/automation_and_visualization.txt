@@ -1,0 +1,263 @@
+MDMTSP PROJECT
+AUTOMATION & VISUALIZATION PIPELINE
+==================================
+
+1. ОБЩАЯ ИДЕЯ
+-------------
+
+В проекте реализован полный автоматизированный цикл исследования алгоритмов:
+
+    генерация инстансов →
+    запуск алгоритмов →
+    сбор результатов →
+    агрегация →
+    визуализация
+
+Цель: обеспечить воспроизводимые эксперименты и удобное сравнение алгоритмов.
+
+
+2. ГЕНЕРАЦИЯ ИНСТАНСОВ
+----------------------
+
+Скрипт:
+    scripts/generate_research_instances.py
+
+Назначение:
+    Автоматическая генерация наборов MDMTSP-инстансов разного масштаба.
+
+Особенности:
+    - 10 групп инстансов
+    - размер от 10 до 100000 customers
+    - случайное число depots
+    - реалистичное распределение salesmen:
+        salesmen >= depots
+        salesmen <= customers
+        нагрузка распределяется по депо
+
+Структура:
+    instances/research/
+        group_01/
+        group_02/
+        ...
+        group_10/
+
+Пример файла:
+    g06_i03_c10000_d7_m39.json
+
+Где:
+    c = customers
+    d = depots
+    m = salesmen
+
+
+3. УНИВЕРСАЛЬНЫЕ SUITE-КОНФИГИ
+-------------------------------
+
+Suite теперь НЕ привязан к одному алгоритму.
+
+Формат:
+    configs/suites/*.json
+
+Пример:
+{
+  "suite_name": "research_all",
+  "algorithms": [
+    "nearest_neighbour",
+    "random_insertion"
+  ],
+  "instance_roots": ["instances/research"],
+  "seeds": [42]
+}
+
+Семантика:
+    suite = набор инстансов + seeds
+    algorithms = какие методы запускать
+
+Поддержка:
+    - несколько алгоритмов
+    - фильтрация по папкам
+    - override через CLI
+
+
+4. ЗАПУСК ЭКСПЕРИМЕНТОВ
+------------------------
+
+Скрипт:
+    scripts/run_suite.py
+
+Основная команда:
+
+    python scripts/run_suite.py \
+        --config configs/suites/research_all.json \
+        --executable build/bin/mdmtsp
+
+Override алгоритмов:
+
+    --algorithms nearest_neighbour
+    --algorithms cheapest_insertion
+
+Логика выполнения:
+
+    for algorithm in algorithms:
+        for instance in instances:
+            for seed in seeds:
+                запуск solver
+
+Результаты:
+
+    results/runs/<suite>/<algorithm>/<instance>/run.json
+    results/logs/<suite>/<algorithm>/<instance>/run.log
+
+
+5. АВТОМАТИЧЕСКОЕ ДОБАВЛЕНИЕ АЛГОРИТМОВ
+----------------------------------------
+
+Скрипт:
+    scripts/add_algorithm.py
+
+Команда:
+
+    python scripts/add_algorithm.py cheapest_insertion
+
+Что делает:
+    - создаёт src/mdmtsp/cheapest_insertion.cpp
+    - добавляет файл в CMakeLists.txt
+    - добавляет декларацию в mdmtsp_solver.hpp
+    - добавляет обработку в main.cpp
+    - добавляет алгоритм во все suite-файлы
+
+Важно:
+    сгенерированный cpp содержит заглушку и требует реализации
+
+
+6. АГРЕГАЦИЯ РЕЗУЛЬТАТОВ
+------------------------
+
+Скрипт:
+    scripts/aggregate_results.py
+
+Команда:
+
+    python scripts/aggregate_results.py --search-root results/runs
+
+Результат:
+
+    results/history/all_runs.csv
+    results/tables/algorithm_summary.csv
+    results/tables/algorithm_instance_summary.csv
+
+Основные метрики:
+    - objective
+    - feasible_rate
+    - mean / median objective
+    - gap to best observed
+
+
+7. ВИЗУАЛИЗАЦИЯ
+----------------
+
+Скрипт:
+    scripts/plot_results.py
+
+Команда:
+
+    python scripts/plot_results.py
+
+Результаты:
+
+    results/plots/history_comparison.png
+    results/plots/instance_gap_heatmap.png
+
+Описание:
+
+    history_comparison:
+        сравнение алгоритмов по качеству
+
+    heatmap:
+        где один алгоритм хуже/лучше другого
+
+
+8. METRIC: GAP
+--------------
+
+Формула:
+
+    gap = (objective - best_observed) / best_observed
+
+Где:
+    best_observed — лучшее значение среди всех алгоритмов
+
+median_gap:
+    медиана по всем инстансам
+
+Интерпретация:
+    0%     → алгоритм лучший
+    5–10%  → хороший
+    >20%   → слабый
+
+
+9. ОГРАНИЧЕНИЯ ТЕКУЩЕЙ РЕАЛИЗАЦИИ
+---------------------------------
+
+Алгоритмы используют distance matrix:
+
+    O(N^2) память
+
+Поэтому:
+    N = 100000 → невозможно (десятки GB памяти)
+
+Практика:
+    использовать только группы до 25000
+
+Suite:
+    research_until_25000
+
+
+10. РЕКОМЕНДУЕМЫЙ WORKFLOW
+--------------------------
+
+1. Генерация:
+    generate_research_instances.py
+
+2. Регистрация алгоритма:
+    add_algorithm.py
+
+3. Реализация алгоритма
+
+4. Сборка:
+    cmake + build
+
+5. Запуск:
+    run_suite.py
+
+6. Агрегация:
+    aggregate_results.py
+
+7. Визуализация:
+    plot_results.py
+
+
+11. СТРУКТУРА RESULTS
+---------------------
+
+results/
+    runs/
+    logs/
+    history/
+    tables/
+    plots/
+    run_summaries/
+
+
+12. ПРЕИМУЩЕСТВА АРХИТЕКТУРЫ
+----------------------------
+
+- масштабируемость
+- воспроизводимость экспериментов
+- независимость suite от алгоритмов
+- автоматическое сравнение
+- быстрый запуск новых алгоритмов
+- минимизация ручных правок
+
+
+END OF DOCUMENT
