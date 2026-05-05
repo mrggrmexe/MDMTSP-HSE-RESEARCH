@@ -1,0 +1,189 @@
+{
+  "algorithm": {
+    "id": "cheapest_insertion",
+    "parameters": {
+      "improve_iterations": 0
+    }
+  },
+  "algorithm_id": "cheapest_insertion",
+  "customer_count": 50,
+  "depot_count": 4,
+  "execution": {
+    "seed": 42,
+    "timestamp_utc": "2026-05-05T14:59:04Z",
+    "wall_time_ms": 0
+  },
+  "feasible": true,
+  "improve_iterations": 0,
+  "instance": {
+    "customer_count": 50,
+    "depot_count": 4,
+    "name": "group_02_instance_08_customers_50_depots_4_salesmen_11_random",
+    "path": "/Users/mrggrm/Documents/GitHub/MDMTSP-HSE-RESEARCH/instances/research/group_02/g02_i08_c50_d4_m11_random.json",
+    "return_to_depot": true,
+    "salesman_count": 11
+  },
+  "instance_name": "group_02_instance_08_customers_50_depots_4_salesmen_11_random",
+  "instance_path": "/Users/mrggrm/Documents/GitHub/MDMTSP-HSE-RESEARCH/instances/research/group_02/g02_i08_c50_d4_m11_random.json",
+  "objective": 14511.327554293981,
+  "result": {
+    "feasible": true,
+    "objective": 14511.327554293981,
+    "route_count": 11,
+    "status": "ok"
+  },
+  "return_to_depot": true,
+  "route_count": 11,
+  "routes": [
+    {
+      "depot_id": 0,
+      "nodes": [
+        0,
+        17,
+        16,
+        24,
+        13,
+        0
+      ],
+      "salesman_id": 0
+    },
+    {
+      "depot_id": 1,
+      "nodes": [
+        1,
+        34,
+        47,
+        14,
+        29,
+        40,
+        33,
+        37,
+        4,
+        1
+      ],
+      "salesman_id": 1
+    },
+    {
+      "depot_id": 2,
+      "nodes": [
+        2,
+        46,
+        36,
+        20,
+        11,
+        7,
+        2
+      ],
+      "salesman_id": 2
+    },
+    {
+      "depot_id": 3,
+      "nodes": [
+        3,
+        41,
+        44,
+        3
+      ],
+      "salesman_id": 3
+    },
+    {
+      "depot_id": 0,
+      "nodes": [
+        0,
+        18,
+        35,
+        39,
+        27,
+        0
+      ],
+      "salesman_id": 4
+    },
+    {
+      "depot_id": 1,
+      "nodes": [
+        1,
+        12,
+        26,
+        48,
+        19,
+        32,
+        8,
+        30,
+        1
+      ],
+      "salesman_id": 5
+    },
+    {
+      "depot_id": 2,
+      "nodes": [
+        2,
+        10,
+        5,
+        15,
+        53,
+        2
+      ],
+      "salesman_id": 6
+    },
+    {
+      "depot_id": 3,
+      "nodes": [
+        3,
+        50,
+        3
+      ],
+      "salesman_id": 7
+    },
+    {
+      "depot_id": 0,
+      "nodes": [
+        0,
+        42,
+        22,
+        6,
+        25,
+        0
+      ],
+      "salesman_id": 8
+    },
+    {
+      "depot_id": 1,
+      "nodes": [
+        1,
+        45,
+        31,
+        9,
+        28,
+        43,
+        51,
+        49,
+        1
+      ],
+      "salesman_id": 9
+    },
+    {
+      "depot_id": 2,
+      "nodes": [
+        2,
+        52,
+        38,
+        21,
+        23,
+        2
+      ],
+      "salesman_id": 10
+    }
+  ],
+  "run_id": "20260505T145904Z__research_until_25000__cheapest_insertion__g02_i08_c50_d4_m11_random__seed_42__95a0bcfd8fc2",
+  "salesman_count": 11,
+  "schema_version": 1,
+  "seed": 42,
+  "source": {
+    "instance_path": "/Users/mrggrm/Documents/GitHub/MDMTSP-HSE-RESEARCH/instances/research/group_02/g02_i08_c50_d4_m11_random.json",
+    "mode": "instance_file"
+  },
+  "status": "ok",
+  "suite_name": "research_until_25000",
+  "timestamp_utc": "2026-05-05T14:59:04Z",
+  "wall_time_ms": 0
+}
