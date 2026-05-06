@@ -25,6 +25,11 @@ def parse_args() -> argparse.Namespace:
         default=Path("results/tables/algorithm_instance_summary.csv"),
     )
     parser.add_argument(
+        "--algorithm-instance-type-summary-csv",
+        type=Path,
+        default=Path("results/tables/algorithm_instance_type_summary.csv"),
+    )
+    parser.add_argument(
         "--plots-dir",
         type=Path,
         default=Path("results/plots"),
@@ -44,7 +49,7 @@ def as_int(value: str | None) -> int | None:
     text = value.strip()
     if not text:
         return None
-    return int(float(text))
+    return int(round(float(text)))
 
 
 def as_float(value: str | None) -> float | None:
@@ -56,57 +61,45 @@ def as_float(value: str | None) -> float | None:
     return float(text)
 
 
-def algorithm_sort_key(row: dict[str, str]) -> tuple[float, float, float, str]:
+def algorithm_sort_key(row: dict[str, str]) -> tuple[float, float, float, float, str]:
     median_gap = as_float(row.get("median_gap_to_best_observed"))
+    median_time_ratio = as_float(row.get("median_time_ratio_to_fastest"))
     feasible_rate = as_float(row.get("feasible_rate"))
     median_time = as_float(row.get("median_wall_time_ms"))
 
     return (
         float("inf") if median_gap is None else median_gap,
+        float("inf") if median_time_ratio is None else median_time_ratio,
         -(feasible_rate if feasible_rate is not None else -1.0),
         float("inf") if median_time is None else median_time,
         row["algorithm_id"],
     )
 
 
-def format_percentage_or_na(value: float | None) -> str:
-    return "n/a" if value is None else f"{value * 100.0:.2f}%"
-
-def format_ms_or_na(value: float | None) -> str:
-    return "n/a" if value is None else f"{value:.0f} ms"
-
-
-def format_count_or_na(value: float | None) -> str:
-    return "n/a" if value is None else f"{value:.0f}"
-
-
 def prepare_metric(
     rows: list[dict[str, str]],
     key: str,
     scale: float,
-) -> tuple[list[float], list[str], list[bool]]:
+    suffix: str,
+) -> tuple[list[float], list[str]]:
     values: list[float] = []
     labels: list[str] = []
-    missing: list[bool] = []
 
     for row in rows:
         raw = as_float(row.get(key))
         if raw is None:
             values.append(0.0)
             labels.append("n/a")
-            missing.append(True)
+            continue
+
+        values.append(raw * scale)
+
+        if suffix:
+            labels.append(f"{raw * scale:.2f}{suffix}")
         else:
-            values.append(raw * scale)
-            missing.append(False)
+            labels.append(f"{raw * scale:.2f}")
 
-            if key.endswith("gap_to_best_observed") or key == "feasible_rate":
-                labels.append(f"{raw * 100.0:.2f}%")
-            elif key.endswith("wall_time_ms"):
-                labels.append(f"{raw:.0f} ms")
-            else:
-                labels.append(f"{raw:.0f}")
-
-    return values, labels, missing
+    return values, labels
 
 
 def annotate_barh(ax, bars, labels: list[str]) -> None:
@@ -130,26 +123,35 @@ def plot_history_comparison(
     ordered = list(reversed(sorted(algorithm_rows, key=algorithm_sort_key)))
     algorithm_names = [row["algorithm_id"] for row in ordered]
 
-    gap_values, gap_labels, _ = prepare_metric(
+    gap_values, gap_labels = prepare_metric(
         ordered,
         "median_gap_to_best_observed",
         100.0,
+        "%",
     )
-    feasible_values, feasible_labels, _ = prepare_metric(
+    time_gap_values, time_gap_labels = prepare_metric(
+        ordered,
+        "median_time_gap_to_fastest",
+        100.0,
+        "%",
+    )
+    feasible_values, feasible_labels = prepare_metric(
         ordered,
         "feasible_rate",
         100.0,
+        "%",
     )
-    runtime_values, runtime_labels, _ = prepare_metric(
-        ordered,
-        "median_wall_time_ms",
-        1.0,
-    )
-    run_count_values, run_count_labels, _ = prepare_metric(
-        ordered,
-        "runs",
-        1.0,
-    )
+
+    runtime_values: list[float] = []
+    runtime_labels: list[str] = []
+    for row in ordered:
+        raw = as_float(row.get("median_wall_time_ms"))
+        if raw is None:
+            runtime_values.append(0.0)
+            runtime_labels.append("n/a")
+        else:
+            runtime_values.append(raw)
+            runtime_labels.append(f"{raw:.3f} ms")
 
     total_runs = sum(as_int(row.get("runs")) or 0 for row in algorithm_rows)
     total_instances = len(instance_rows)
@@ -157,24 +159,26 @@ def plot_history_comparison(
     fig, axes = plt.subplots(2, 2, figsize=(18, 11))
 
     bars = axes[0, 0].barh(algorithm_names, gap_values)
-    axes[0, 0].set_title("Median gap to best observed")
+    axes[0, 0].set_title("Median objective gap to best observed")
     axes[0, 0].set_xlabel("Percent")
     annotate_barh(axes[0, 0], bars, gap_labels)
 
-    bars = axes[0, 1].barh(algorithm_names, feasible_values)
-    axes[0, 1].set_title("Feasibility rate")
+    bars = axes[0, 1].barh(algorithm_names, time_gap_values)
+    axes[0, 1].set_title("Median runtime gap to fastest")
     axes[0, 1].set_xlabel("Percent")
-    annotate_barh(axes[0, 1], bars, feasible_labels)
+    annotate_barh(axes[0, 1], bars, time_gap_labels)
 
-    bars = axes[1, 0].barh(algorithm_names, runtime_values)
-    axes[1, 0].set_title("Median runtime")
-    axes[1, 0].set_xlabel("Milliseconds")
-    annotate_barh(axes[1, 0], bars, runtime_labels)
+    bars = axes[1, 0].barh(algorithm_names, feasible_values)
+    axes[1, 0].set_title("Feasibility rate")
+    axes[1, 0].set_xlabel("Percent")
+    annotate_barh(axes[1, 0], bars, feasible_labels)
 
-    bars = axes[1, 1].barh(algorithm_names, run_count_values)
-    axes[1, 1].set_title("Run count")
-    axes[1, 1].set_xlabel("Runs")
-    annotate_barh(axes[1, 1], bars, run_count_labels)
+    bars = axes[1, 1].barh(algorithm_names, runtime_values)
+    axes[1, 1].set_title("Median runtime")
+    axes[1, 1].set_xlabel("Milliseconds")
+    if any(value > 0.0 for value in runtime_values):
+        axes[1, 1].set_xscale("log")
+    annotate_barh(axes[1, 1], bars, runtime_labels)
 
     fig.suptitle(
         f"MDMTSP history comparison | runs={total_runs} | instances={total_instances}",
@@ -186,9 +190,56 @@ def plot_history_comparison(
     plt.close(fig)
 
 
-def plot_instance_gap_heatmap(
+def plot_quality_vs_time(
+    algorithm_rows: list[dict[str, str]],
+    output_path: Path,
+) -> None:
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(10, 7))
+
+    xs: list[float] = []
+    ys: list[float] = []
+    labels: list[str] = []
+
+    for row in sorted(algorithm_rows, key=algorithm_sort_key):
+        runtime_ms = as_float(row.get("median_wall_time_ms"))
+        gap = as_float(row.get("median_gap_to_best_observed"))
+
+        if runtime_ms is None or gap is None:
+            continue
+        if runtime_ms <= 0.0:
+            continue
+
+        xs.append(runtime_ms)
+        ys.append(gap * 100.0)
+        labels.append(row["algorithm_id"])
+
+    if not xs:
+        return
+
+    ax.scatter(xs, ys)
+    for x, y, label in zip(xs, ys, labels):
+        ax.annotate(label, (x, y), xytext=(5, 5), textcoords="offset points")
+
+    ax.set_xscale("log")
+    ax.set_xlabel("Median runtime (ms, log scale)")
+    ax.set_ylabel("Median objective gap to best observed (%)")
+    ax.set_title("Quality vs runtime")
+    fig.tight_layout()
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=220, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_instance_heatmap(
+    *,
     algorithm_rows: list[dict[str, str]],
     algorithm_instance_rows: list[dict[str, str]],
+    value_key: str,
+    title: str,
+    colorbar_label: str,
     output_path: Path,
 ) -> None:
     import matplotlib.pyplot as plt
@@ -209,7 +260,7 @@ def plot_instance_gap_heatmap(
 
     matrix_lookup: dict[tuple[str, str], float] = {}
     for row in algorithm_instance_rows:
-        value = as_float(row.get("median_gap_to_best_observed"))
+        value = as_float(row.get(value_key))
         if value is not None:
             matrix_lookup[(row["algorithm_id"], row["instance_name"])] = value * 100.0
 
@@ -236,7 +287,7 @@ def plot_instance_gap_heatmap(
     fig, ax = plt.subplots(figsize=(width, height))
     image = ax.imshow(matrix, aspect="auto", interpolation="nearest")
 
-    ax.set_title("Median gap to best observed by algorithm and instance")
+    ax.set_title(title)
     ax.set_ylabel("Algorithm")
 
     x_step = max(1, len(instance_names) // 24)
@@ -249,9 +300,63 @@ def plot_instance_gap_heatmap(
     ax.set_yticklabels(ordered_algorithms)
 
     cbar = fig.colorbar(image, ax=ax)
-    cbar.set_label("Percent")
+    cbar.set_label(colorbar_label)
 
     fig.tight_layout()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=220, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_instance_type_comparison(
+    algorithm_rows: list[dict[str, str]],
+    algorithm_instance_type_rows: list[dict[str, str]],
+    output_path: Path,
+) -> None:
+    import matplotlib.pyplot as plt
+
+    algorithms = [row["algorithm_id"] for row in sorted(algorithm_rows, key=algorithm_sort_key)]
+    instance_types = sorted({row["instance_type"] for row in algorithm_instance_type_rows if row["instance_type"]})
+
+    if not algorithms or not instance_types:
+        return
+
+    gap_lookup: dict[tuple[str, str], float] = {}
+    time_lookup: dict[tuple[str, str], float] = {}
+
+    for row in algorithm_instance_type_rows:
+        gap = as_float(row.get("median_gap_to_best_observed"))
+        time_gap = as_float(row.get("median_time_gap_to_fastest"))
+        key = (row["algorithm_id"], row["instance_type"])
+        if gap is not None:
+            gap_lookup[key] = gap * 100.0
+        if time_gap is not None:
+            time_lookup[key] = time_gap * 100.0
+
+    x_positions = list(range(len(instance_types)))
+    width = 0.8 / max(1, len(algorithms))
+
+    fig, axes = plt.subplots(2, 1, figsize=(14, 10), sharex=True)
+
+    for algo_index, algorithm in enumerate(algorithms):
+        offsets = [x + (algo_index - (len(algorithms) - 1) / 2.0) * width for x in x_positions]
+        gap_values = [gap_lookup.get((algorithm, instance_type), 0.0) for instance_type in instance_types]
+        time_values = [time_lookup.get((algorithm, instance_type), 0.0) for instance_type in instance_types]
+
+        axes[0].bar(offsets, gap_values, width=width, label=algorithm)
+        axes[1].bar(offsets, time_values, width=width, label=algorithm)
+
+    axes[0].set_title("Median objective gap by instance type")
+    axes[0].set_ylabel("Percent")
+
+    axes[1].set_title("Median runtime gap to fastest by instance type")
+    axes[1].set_ylabel("Percent")
+    axes[1].set_xticks(x_positions)
+    axes[1].set_xticklabels(instance_types)
+
+    axes[0].legend()
+    fig.tight_layout()
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=220, bbox_inches="tight")
     plt.close(fig)
@@ -263,6 +368,7 @@ def main() -> int:
     algorithm_summary_path = args.algorithm_summary_csv.resolve()
     instance_summary_path = args.instance_summary_csv.resolve()
     algorithm_instance_summary_path = args.algorithm_instance_summary_csv.resolve()
+    algorithm_instance_type_summary_path = args.algorithm_instance_type_summary_csv.resolve()
     plots_dir = args.plots_dir.resolve()
 
     if not algorithm_summary_path.exists():
@@ -278,6 +384,11 @@ def main() -> int:
     algorithm_rows = load_csv(algorithm_summary_path)
     instance_rows = load_csv(instance_summary_path)
     algorithm_instance_rows = load_csv(algorithm_instance_summary_path)
+    algorithm_instance_type_rows = (
+        load_csv(algorithm_instance_type_summary_path)
+        if algorithm_instance_type_summary_path.exists()
+        else []
+    )
 
     if not algorithm_rows:
         print("algorithm summary csv is empty", file=sys.stderr)
@@ -288,11 +399,33 @@ def main() -> int:
         instance_rows=instance_rows,
         output_path=plots_dir / "history_comparison.png",
     )
-    plot_instance_gap_heatmap(
+    plot_quality_vs_time(
+        algorithm_rows=algorithm_rows,
+        output_path=plots_dir / "quality_vs_time.png",
+    )
+    plot_instance_heatmap(
         algorithm_rows=algorithm_rows,
         algorithm_instance_rows=algorithm_instance_rows,
+        value_key="median_gap_to_best_observed",
+        title="Median objective gap to best observed by algorithm and instance",
+        colorbar_label="Percent",
         output_path=plots_dir / "instance_gap_heatmap.png",
     )
+    plot_instance_heatmap(
+        algorithm_rows=algorithm_rows,
+        algorithm_instance_rows=algorithm_instance_rows,
+        value_key="median_time_gap_to_fastest",
+        title="Median runtime gap to fastest by algorithm and instance",
+        colorbar_label="Percent",
+        output_path=plots_dir / "instance_time_heatmap.png",
+    )
+
+    if algorithm_instance_type_rows:
+        plot_instance_type_comparison(
+            algorithm_rows=algorithm_rows,
+            algorithm_instance_type_rows=algorithm_instance_type_rows,
+            output_path=plots_dir / "instance_type_comparison.png",
+        )
 
     print(f"plots saved to {plots_dir}")
     return 0

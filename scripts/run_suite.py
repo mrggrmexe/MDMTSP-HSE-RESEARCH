@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import shlex
+import statistics
 import subprocess
 import sys
 import time
@@ -268,6 +269,78 @@ def write_log(path: Path, stdout_text: str, stderr_text: str) -> None:
     path.write_text(combined, encoding="utf-8")
 
 
+def safe_int(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(round(value))
+    if isinstance(value, str):
+        return int(round(float(value.strip())))
+    return int(value)
+
+
+def safe_float(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        return float(value)
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        return float(value.strip())
+    return float(value)
+
+
+def summarize_algorithm_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_algorithm: dict[str, list[dict[str, Any]]] = {}
+
+    for entry in entries:
+        algorithm = str(entry.get("algorithm_id", "unknown"))
+        by_algorithm.setdefault(algorithm, []).append(entry)
+
+    output: list[dict[str, Any]] = []
+
+    for algorithm, values in sorted(by_algorithm.items()):
+        solver_times_ms = [
+            float(entry["solver_wall_time_ms"])
+            for entry in values
+            if entry.get("solver_wall_time_ms") is not None and entry["status"] == "ok"
+        ]
+        effective_times_ms = [
+            float(entry["effective_wall_time_ms"])
+            for entry in values
+            if entry.get("effective_wall_time_ms") is not None and entry["status"] == "ok"
+        ]
+
+        output.append(
+            {
+                "algorithm_id": algorithm,
+                "runs": len(values),
+                "ok_runs": sum(1 for entry in values if entry["status"] == "ok"),
+                "failed_runs": sum(1 for entry in values if entry["status"] == "failed"),
+                "dry_runs": sum(1 for entry in values if entry["status"] == "dry_run"),
+                "total_solver_wall_time_s": (
+                    sum(solver_times_ms) / 1000.0 if solver_times_ms else None
+                ),
+                "median_solver_wall_time_ms": (
+                    statistics.median(solver_times_ms) if solver_times_ms else None
+                ),
+                "total_effective_wall_time_s": (
+                    sum(effective_times_ms) / 1000.0 if effective_times_ms else None
+                ),
+                "median_effective_wall_time_ms": (
+                    statistics.median(effective_times_ms) if effective_times_ms else None
+                ),
+            }
+        )
+
+    return output
+
+
 def execute_run(
     *,
     executable: Path,
@@ -318,7 +391,7 @@ def execute_run(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
-    wall_clock_start = time.perf_counter()
+    wall_clock_start_ns = time.perf_counter_ns()
     completed = subprocess.run(
         command,
         cwd=root,
@@ -326,9 +399,12 @@ def execute_run(
         text=True,
         check=False,
     )
-    wall_clock_ms = int(round((time.perf_counter() - wall_clock_start) * 1000.0))
-    finished_at = utc_now_iso()
+    runner_wall_clock_ns = time.perf_counter_ns() - wall_clock_start_ns
+    runner_wall_clock_us = int(round(runner_wall_clock_ns / 1000.0))
+    runner_wall_clock_ms = runner_wall_clock_ns / 1_000_000.0
+    runner_wall_clock_s = runner_wall_clock_ns / 1_000_000_000.0
 
+    finished_at = utc_now_iso()
     write_log(log_path, completed.stdout, completed.stderr)
 
     entry: dict[str, Any] = {
@@ -345,7 +421,9 @@ def execute_run(
         "log_path": str(log_path),
         "started_at_utc": started_at,
         "finished_at_utc": finished_at,
-        "runner_wall_clock_ms": wall_clock_ms,
+        "runner_wall_clock_us": runner_wall_clock_us,
+        "runner_wall_clock_ms": runner_wall_clock_ms,
+        "runner_wall_clock_s": runner_wall_clock_s,
     }
 
     if completed.returncode != 0:
@@ -363,10 +441,40 @@ def execute_run(
         entry["failure_reason"] = f"cannot parse result json: {exc}"
         return entry
 
+    solver_wall_time_us = safe_int(
+        result.get("wall_time_us")
+        if "wall_time_us" in result
+        else result.get("execution", {}).get("wall_time_us")
+        if isinstance(result.get("execution"), dict)
+        else None
+    )
+
+    solver_wall_time_ms = safe_float(
+        result.get("wall_time_ms")
+        if "wall_time_ms" in result
+        else result.get("execution", {}).get("wall_time_ms")
+        if isinstance(result.get("execution"), dict)
+        else None
+    )
+
+    if solver_wall_time_us is None and solver_wall_time_ms is not None:
+        solver_wall_time_us = int(round(solver_wall_time_ms * 1000.0))
+
+    if solver_wall_time_ms is None and solver_wall_time_us is not None:
+        solver_wall_time_ms = solver_wall_time_us / 1000.0
+
+    effective_wall_time_us = solver_wall_time_us if solver_wall_time_us is not None else runner_wall_clock_us
+    effective_wall_time_ms = solver_wall_time_ms if solver_wall_time_ms is not None else runner_wall_clock_ms
+    effective_wall_time_s = effective_wall_time_ms / 1000.0 if effective_wall_time_ms is not None else None
+
     entry["objective"] = result.get("objective")
     entry["feasible"] = result.get("feasible")
     entry["solver_status"] = result.get("status")
-    entry["solver_wall_time_ms"] = result.get("wall_time_ms")
+    entry["solver_wall_time_us"] = solver_wall_time_us
+    entry["solver_wall_time_ms"] = solver_wall_time_ms
+    entry["effective_wall_time_us"] = effective_wall_time_us
+    entry["effective_wall_time_ms"] = effective_wall_time_ms
+    entry["effective_wall_time_s"] = effective_wall_time_s
     entry["result_algorithm_id"] = result.get("algorithm_id")
     entry["result_suite_name"] = result.get("suite_name")
 
@@ -399,6 +507,7 @@ def build_summary_payload(
         "ok_runs": ok_runs,
         "failed_runs": failed_runs,
         "dry_runs": dry_runs,
+        "algorithm_summary": summarize_algorithm_entries(entries),
         "entries": entries,
     }
 
@@ -448,6 +557,8 @@ def main() -> int:
                 line = f"[{entry['status']}] {algorithm} | {instance_path.stem} seed={seed}"
                 if entry.get("objective") is not None:
                     line += f" objective={entry['objective']}"
+                if entry.get("effective_wall_time_ms") is not None:
+                    line += f" time_ms={entry['effective_wall_time_ms']:.3f}"
                 print(line)
 
                 if args.fail_fast and entry["status"] == "failed":

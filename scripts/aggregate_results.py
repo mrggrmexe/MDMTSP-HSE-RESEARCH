@@ -1,39 +1,61 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import json
+import shlex
 import statistics
+import subprocess
 import sys
-from collections import defaultdict
-from pathlib import Path
+import time
+import uuid
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 
-SUCCESS_STATUSES = {"ok", "success"}
-EPS = 1e-9
+@dataclass(frozen=True)
+class SuiteConfig:
+    suite_name: str
+    description: str
+    algorithms: tuple[str, ...]
+    instance_roots: tuple[Path, ...]
+    include_globs: tuple[str, ...]
+    exclude_globs: tuple[str, ...]
+    seeds: tuple[int, ...]
+    improve_iterations: int
+    return_to_depot: bool | None
+
+
+def utc_now_iso() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def utc_now_compact() -> str:
+    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--search-root",
-        type=Path,
-        action="append",
-        dest="search_roots",
-        help="Directory with per-run JSON files. Can be passed multiple times.",
-    )
-    parser.add_argument(
-        "--history-dir",
-        type=Path,
-        default=Path("results/history"),
-    )
-    parser.add_argument(
-        "--tables-dir",
-        type=Path,
-        default=Path("results/tables"),
-    )
+    parser.add_argument("--config", required=True, type=Path)
+    parser.add_argument("--executable", type=Path, default=Path("build/bin/mdmtsp"))
+    parser.add_argument("--output-root", type=Path, default=Path("results/runs"))
+    parser.add_argument("--logs-root", type=Path, default=Path("results/logs"))
+    parser.add_argument("--summary-path", type=Path)
+    parser.add_argument("--algorithms", nargs="+", help="Override algorithms from config")
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--fail-fast", action="store_true")
     return parser.parse_args()
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parent.parent
+
+
+def resolve_repo_path(root: Path, value: Path) -> Path:
+    if value.is_absolute():
+        return value
+    return (root / value).resolve()
 
 
 def load_json(path: Path) -> Any:
@@ -41,52 +63,213 @@ def load_json(path: Path) -> Any:
         return json.load(handle)
 
 
-def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
+def write_json_atomic(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_name(path.name + ".tmp")
     with tmp_path.open("w", encoding="utf-8") as handle:
-        for row in rows:
-            handle.write(json.dumps(row, ensure_ascii=False))
-            handle.write("\n")
+        json.dump(payload, handle, ensure_ascii=False, indent=2)
+        handle.write("\n")
     tmp_path.replace(path)
 
 
-def write_csv(path: Path, rows: list[dict[str, Any]], fieldnames: list[str]) -> None:
+def normalize_algorithms(raw_value: Any) -> tuple[str, ...]:
+    if isinstance(raw_value, str):
+        value = raw_value.strip()
+        if not value:
+            raise ValueError("algorithm name must be non-empty")
+        return (value,)
+
+    if isinstance(raw_value, list):
+        values: list[str] = []
+        for item in raw_value:
+            if not isinstance(item, str) or not item.strip():
+                raise ValueError("each algorithm must be a non-empty string")
+            values.append(item.strip())
+        if not values:
+            raise ValueError("field 'algorithms' must not be empty")
+        return tuple(values)
+
+    raise ValueError("field 'algorithms' or 'algorithm' has invalid type")
+
+
+def read_suite_config(config_path: Path, root: Path) -> SuiteConfig:
+    data = load_json(config_path)
+
+    if not isinstance(data, dict):
+        raise ValueError("suite config must be a JSON object")
+
+    suite_name = data.get("suite_name")
+    if not isinstance(suite_name, str) or not suite_name.strip():
+        raise ValueError("field 'suite_name' must be a non-empty string")
+
+    description = data.get("description", "")
+    if not isinstance(description, str):
+        raise ValueError("field 'description' must be a string")
+
+    if "algorithms" in data:
+        algorithms = normalize_algorithms(data["algorithms"])
+    elif "algorithm" in data:
+        algorithms = normalize_algorithms(data["algorithm"])
+    else:
+        raise ValueError("suite config must contain 'algorithms' or 'algorithm'")
+
+    raw_instance_roots = data.get("instance_roots")
+    if not isinstance(raw_instance_roots, list) or not raw_instance_roots:
+        raise ValueError("field 'instance_roots' must be a non-empty array")
+
+    instance_roots: list[Path] = []
+    for value in raw_instance_roots:
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("each entry of 'instance_roots' must be a non-empty string")
+        instance_roots.append(resolve_repo_path(root, Path(value)))
+
+    raw_include_globs = data.get("include_globs", ["**/*.json"])
+    if not isinstance(raw_include_globs, list) or not raw_include_globs:
+        raise ValueError("field 'include_globs' must be a non-empty array")
+    include_globs = tuple(str(pattern) for pattern in raw_include_globs)
+
+    raw_exclude_globs = data.get("exclude_globs", [])
+    if not isinstance(raw_exclude_globs, list):
+        raise ValueError("field 'exclude_globs' must be an array")
+    exclude_globs = tuple(str(pattern) for pattern in raw_exclude_globs)
+
+    raw_seeds = data.get("seeds")
+    if not isinstance(raw_seeds, list) or not raw_seeds:
+        raise ValueError("field 'seeds' must be a non-empty array")
+    seeds: list[int] = []
+    for value in raw_seeds:
+        if not isinstance(value, int) or value < 0:
+            raise ValueError("each seed must be a non-negative integer")
+        seeds.append(value)
+
+    improve_iterations = data.get("improve_iterations", 0)
+    if not isinstance(improve_iterations, int) or improve_iterations < 0:
+        raise ValueError("field 'improve_iterations' must be a non-negative integer")
+
+    return_to_depot = data.get("return_to_depot")
+    if return_to_depot is not None and not isinstance(return_to_depot, bool):
+        raise ValueError("field 'return_to_depot' must be a boolean when provided")
+
+    return SuiteConfig(
+        suite_name=suite_name.strip(),
+        description=description,
+        algorithms=algorithms,
+        instance_roots=tuple(instance_roots),
+        include_globs=include_globs,
+        exclude_globs=exclude_globs,
+        seeds=tuple(seeds),
+        improve_iterations=improve_iterations,
+        return_to_depot=return_to_depot,
+    )
+
+
+def matches_any_glob(
+    relative_to_repo: PurePosixPath,
+    relative_to_root: PurePosixPath,
+    patterns: tuple[str, ...],
+) -> bool:
+    return any(relative_to_repo.match(pattern) or relative_to_root.match(pattern) for pattern in patterns)
+
+
+def discover_instances(config: SuiteConfig, root: Path) -> list[Path]:
+    discovered: set[Path] = set()
+
+    for instance_root in config.instance_roots:
+        if not instance_root.exists():
+            raise FileNotFoundError(f"instance root does not exist: {instance_root}")
+
+        if instance_root.is_file():
+            candidates = [instance_root]
+        else:
+            candidates = []
+            for pattern in config.include_globs:
+                candidates.extend(path for path in instance_root.glob(pattern) if path.is_file())
+
+        for candidate in candidates:
+            candidate = candidate.resolve()
+
+            try:
+                relative_to_repo = PurePosixPath(candidate.relative_to(root).as_posix())
+            except ValueError as exc:
+                raise ValueError(f"instance path is outside repository root: {candidate}") from exc
+
+            if instance_root.is_file():
+                relative_to_root = PurePosixPath(candidate.name)
+            else:
+                relative_to_root = PurePosixPath(candidate.relative_to(instance_root).as_posix())
+
+            if config.exclude_globs and matches_any_glob(relative_to_repo, relative_to_root, config.exclude_globs):
+                continue
+
+            if candidate.suffix.lower() != ".json":
+                continue
+
+            discovered.add(candidate)
+
+    return sorted(discovered)
+
+
+def instance_output_stem(instance_path: Path, root: Path) -> Path:
+    relative = instance_path.relative_to(root).with_suffix("")
+    parts = list(relative.parts)
+    if parts and parts[0] == "instances":
+        parts = parts[1:]
+    return Path(*parts) if parts else Path(instance_path.stem)
+
+
+def build_run_id(suite_name: str, algorithm: str, instance_path: Path, seed: int) -> str:
+    stem = instance_path.stem.replace(" ", "_")
+    return f"{utc_now_compact()}__{suite_name}__{algorithm}__{stem}__seed_{seed}__{uuid.uuid4().hex[:12]}"
+
+
+def build_command(
+    executable: Path,
+    algorithm: str,
+    config: SuiteConfig,
+    instance_path: Path,
+    seed: int,
+    output_path: Path,
+    run_id: str,
+) -> list[str]:
+    command = [
+        str(executable),
+        "--instance",
+        str(instance_path),
+        "--algorithm",
+        algorithm,
+        "--seed",
+        str(seed),
+        "--suite",
+        config.suite_name,
+        "--run-id",
+        run_id,
+        "--json",
+        "--output",
+        str(output_path),
+    ]
+
+    if config.improve_iterations > 0:
+        command.extend(["--improve-iters", str(config.improve_iterations)])
+
+    if config.return_to_depot is True:
+        command.append("--closed")
+    elif config.return_to_depot is False:
+        command.append("--open")
+
+    return command
+
+
+def write_log(path: Path, stdout_text: str, stderr_text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_name(path.name + ".tmp")
-    with tmp_path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
-    tmp_path.replace(path)
+    combined = stdout_text
+    if stderr_text:
+        if combined and not combined.endswith("\n"):
+            combined += "\n"
+        combined += stderr_text
+    path.write_text(combined, encoding="utf-8")
 
 
-def dig(data: dict[str, Any], *keys: str) -> Any:
-    current: Any = data
-    for key in keys:
-        if not isinstance(current, dict) or key not in current:
-            return None
-        current = current[key]
-    return current
-
-
-def first_non_none(*values: Any) -> Any:
-    for value in values:
-        if value is not None:
-            return value
-    return None
-
-
-def as_str(value: Any) -> str | None:
-    if value is None:
-        return None
-    if isinstance(value, str):
-        text = value.strip()
-        return text if text else None
-    return str(value)
-
-
-def as_int(value: Any) -> int | None:
+def safe_int(value: Any) -> int | None:
     if value is None or value == "":
         return None
     if isinstance(value, bool):
@@ -94,16 +277,13 @@ def as_int(value: Any) -> int | None:
     if isinstance(value, int):
         return value
     if isinstance(value, float):
-        return int(value)
+        return int(round(value))
     if isinstance(value, str):
-        text = value.strip()
-        if not text:
-            return None
-        return int(text)
+        return int(round(float(value.strip())))
     return int(value)
 
 
-def as_float(value: Any) -> float | None:
+def safe_float(value: Any) -> float | None:
     if value is None or value == "":
         return None
     if isinstance(value, bool):
@@ -111,544 +291,315 @@ def as_float(value: Any) -> float | None:
     if isinstance(value, (int, float)):
         return float(value)
     if isinstance(value, str):
-        text = value.strip()
-        if not text:
-            return None
-        return float(text)
+        return float(value.strip())
     return float(value)
 
 
-def as_bool(value: Any) -> bool | None:
-    if value is None or value == "":
-        return None
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return bool(value)
-    if isinstance(value, str):
-        text = value.strip().lower()
-        if text in {"true", "1", "yes", "y"}:
-            return True
-        if text in {"false", "0", "no", "n"}:
-            return False
-    raise ValueError(f"cannot convert to bool: {value!r}")
+def summarize_algorithm_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_algorithm: dict[str, list[dict[str, Any]]] = {}
+
+    for entry in entries:
+        algorithm = str(entry.get("algorithm_id", "unknown"))
+        by_algorithm.setdefault(algorithm, []).append(entry)
+
+    output: list[dict[str, Any]] = []
+
+    for algorithm, values in sorted(by_algorithm.items()):
+        solver_times_ms = [
+            float(entry["solver_wall_time_ms"])
+            for entry in values
+            if entry.get("solver_wall_time_ms") is not None and entry["status"] == "ok"
+        ]
+        effective_times_ms = [
+            float(entry["effective_wall_time_ms"])
+            for entry in values
+            if entry.get("effective_wall_time_ms") is not None and entry["status"] == "ok"
+        ]
+
+        output.append(
+            {
+                "algorithm_id": algorithm,
+                "runs": len(values),
+                "ok_runs": sum(1 for entry in values if entry["status"] == "ok"),
+                "failed_runs": sum(1 for entry in values if entry["status"] == "failed"),
+                "dry_runs": sum(1 for entry in values if entry["status"] == "dry_run"),
+                "total_solver_wall_time_s": (
+                    sum(solver_times_ms) / 1000.0 if solver_times_ms else None
+                ),
+                "median_solver_wall_time_ms": (
+                    statistics.median(solver_times_ms) if solver_times_ms else None
+                ),
+                "total_effective_wall_time_s": (
+                    sum(effective_times_ms) / 1000.0 if effective_times_ms else None
+                ),
+                "median_effective_wall_time_ms": (
+                    statistics.median(effective_times_ms) if effective_times_ms else None
+                ),
+            }
+        )
+
+    return output
 
 
-def safe_mean(values: list[float]) -> float | None:
-    return statistics.fmean(values) if values else None
+def execute_run(
+    *,
+    executable: Path,
+    algorithm: str,
+    config: SuiteConfig,
+    instance_path: Path,
+    seed: int,
+    output_root: Path,
+    logs_root: Path,
+    root: Path,
+    dry_run: bool,
+) -> dict[str, Any]:
+    run_id = build_run_id(config.suite_name, algorithm, instance_path, seed)
+    started_at = utc_now_iso()
 
+    rel_stem = instance_output_stem(instance_path, root)
+    output_path = output_root / config.suite_name / algorithm / rel_stem / f"{run_id}.json"
+    log_path = logs_root / config.suite_name / algorithm / rel_stem / f"{run_id}.log"
 
-def safe_median(values: list[float]) -> float | None:
-    return statistics.median(values) if values else None
+    command = build_command(
+        executable=executable,
+        algorithm=algorithm,
+        config=config,
+        instance_path=instance_path,
+        seed=seed,
+        output_path=output_path,
+        run_id=run_id,
+    )
+    quoted_command = " ".join(shlex.quote(part) for part in command)
 
+    if dry_run:
+        return {
+            "run_id": run_id,
+            "suite_name": config.suite_name,
+            "algorithm_id": algorithm,
+            "instance_name": instance_path.stem,
+            "instance_path": str(instance_path),
+            "seed": seed,
+            "status": "dry_run",
+            "return_code": 0,
+            "command": quoted_command,
+            "output_path": str(output_path),
+            "log_path": str(log_path),
+            "started_at_utc": started_at,
+            "finished_at_utc": started_at,
+        }
 
-def success_from_status(status: str | None) -> bool:
-    if status is None:
-        return False
-    return status.strip().lower() in SUCCESS_STATUSES
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
 
+    wall_clock_start_ns = time.perf_counter_ns()
+    completed = subprocess.run(
+        command,
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    runner_wall_clock_ns = time.perf_counter_ns() - wall_clock_start_ns
+    runner_wall_clock_us = int(round(runner_wall_clock_ns / 1000.0))
+    runner_wall_clock_ms = runner_wall_clock_ns / 1_000_000.0
+    runner_wall_clock_s = runner_wall_clock_ns / 1_000_000_000.0
 
-def approx_equal(a: float, b: float) -> bool:
-    scale = max(1.0, abs(a), abs(b))
-    return abs(a - b) <= EPS * scale
+    finished_at = utc_now_iso()
+    write_log(log_path, completed.stdout, completed.stderr)
 
-
-def normalize_result(path: Path) -> dict[str, Any]:
-    data = load_json(path)
-    if not isinstance(data, dict):
-        raise ValueError("result JSON must be an object")
-
-    routes = data.get("routes")
-    derived_route_count = len(routes) if isinstance(routes, list) else None
-
-    row: dict[str, Any] = {
-        "run_id": as_str(first_non_none(data.get("run_id"), path.stem)) or path.stem,
-        "timestamp_utc": as_str(
-            first_non_none(
-                data.get("timestamp_utc"),
-                dig(data, "execution", "timestamp_utc"),
-            )
-        ),
-        "algorithm_id": as_str(
-            first_non_none(
-                data.get("algorithm_id"),
-                dig(data, "algorithm", "id"),
-            )
-        ) or "unknown",
-        "suite_name": as_str(data.get("suite_name")),
-        "instance_name": as_str(
-            first_non_none(
-                data.get("instance_name"),
-                dig(data, "instance", "name"),
-            )
-        ),
-        "instance_path": as_str(
-            first_non_none(
-                data.get("instance_path"),
-                dig(data, "instance", "path"),
-                dig(data, "source", "instance_path"),
-            )
-        ),
-        "seed": as_int(
-            first_non_none(
-                data.get("seed"),
-                dig(data, "execution", "seed"),
-            )
-        ),
-        "improve_iterations": as_int(
-            first_non_none(
-                data.get("improve_iterations"),
-                dig(data, "algorithm", "parameters", "improve_iterations"),
-            )
-        ),
-        "depot_count": as_int(
-            first_non_none(
-                data.get("depot_count"),
-                dig(data, "instance", "depot_count"),
-            )
-        ),
-        "customer_count": as_int(
-            first_non_none(
-                data.get("customer_count"),
-                dig(data, "instance", "customer_count"),
-            )
-        ),
-        "salesman_count": as_int(
-            first_non_none(
-                data.get("salesman_count"),
-                dig(data, "instance", "salesman_count"),
-            )
-        ),
-        "return_to_depot": as_bool(
-            first_non_none(
-                data.get("return_to_depot"),
-                dig(data, "instance", "return_to_depot"),
-            )
-        ),
-        "objective": as_float(
-            first_non_none(
-                data.get("objective"),
-                dig(data, "result", "objective"),
-            )
-        ),
-        "feasible": as_bool(
-            first_non_none(
-                data.get("feasible"),
-                dig(data, "result", "feasible"),
-            )
-        ),
-        "status": as_str(
-            first_non_none(
-                data.get("status"),
-                dig(data, "result", "status"),
-            )
-        ) or "unknown",
-        "route_count": as_int(
-            first_non_none(
-                data.get("route_count"),
-                dig(data, "result", "route_count"),
-                derived_route_count,
-            )
-        ),
-        "wall_time_ms": as_float(
-            first_non_none(
-                data.get("wall_time_ms"),
-                dig(data, "execution", "wall_time_ms"),
-            )
-        ),
-        "result_file": str(path),
+    entry: dict[str, Any] = {
+        "run_id": run_id,
+        "suite_name": config.suite_name,
+        "algorithm_id": algorithm,
+        "instance_name": instance_path.stem,
+        "instance_path": str(instance_path),
+        "seed": seed,
+        "status": "ok" if completed.returncode == 0 else "failed",
+        "return_code": completed.returncode,
+        "command": quoted_command,
+        "output_path": str(output_path),
+        "log_path": str(log_path),
+        "started_at_utc": started_at,
+        "finished_at_utc": finished_at,
+        "runner_wall_clock_us": runner_wall_clock_us,
+        "runner_wall_clock_ms": runner_wall_clock_ms,
+        "runner_wall_clock_s": runner_wall_clock_s,
     }
 
-    if not row["instance_name"]:
-        raise ValueError("missing instance_name")
+    if completed.returncode != 0:
+        return entry
 
-    row["is_success"] = success_from_status(row["status"])
-    row["is_comparable"] = bool(
-        row["is_success"] and row["feasible"] is True and row["objective"] is not None
-    )
-    row["best_observed_objective"] = None
-    row["gap_to_best_observed"] = None
-    row["is_best_observed"] = False
+    if not output_path.exists():
+        entry["status"] = "failed"
+        entry["failure_reason"] = "result file was not created"
+        return entry
 
-    return row
+    try:
+        result = load_json(output_path)
+    except Exception as exc:
+        entry["status"] = "failed"
+        entry["failure_reason"] = f"cannot parse result json: {exc}"
+        return entry
 
-
-def discover_result_files(search_roots: list[Path]) -> list[Path]:
-    result_files: set[Path] = set()
-
-    for root in search_roots:
-        if not root.exists():
-            continue
-
-        if root.is_file():
-            if root.suffix.lower() == ".json":
-                result_files.add(root.resolve())
-            continue
-
-        for path in root.rglob("*.json"):
-            if path.is_file():
-                result_files.add(path.resolve())
-
-    return sorted(result_files)
-
-
-def annotate_best_observed(rows: list[dict[str, Any]]) -> None:
-    best_by_instance: dict[str, float] = {}
-
-    for row in rows:
-        if not row["is_comparable"]:
-            continue
-        instance_name = row["instance_name"]
-        objective = row["objective"]
-        assert objective is not None
-
-        current_best = best_by_instance.get(instance_name)
-        if current_best is None or objective < current_best:
-            best_by_instance[instance_name] = objective
-
-    for row in rows:
-        best = best_by_instance.get(row["instance_name"])
-        row["best_observed_objective"] = best
-
-        if not row["is_comparable"] or best is None:
-            continue
-
-        objective = row["objective"]
-        assert objective is not None
-
-        if approx_equal(best, 0.0):
-            row["gap_to_best_observed"] = 0.0 if approx_equal(objective, best) else None
-        else:
-            row["gap_to_best_observed"] = (objective - best) / best
-
-        row["is_best_observed"] = approx_equal(objective, best)
-
-
-def build_algorithm_summary(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for row in rows:
-        grouped[row["algorithm_id"]].append(row)
-
-    output: list[dict[str, Any]] = []
-
-    for algorithm_id, values in grouped.items():
-        gap_values = [
-            row["gap_to_best_observed"]
-            for row in values
-            if row["gap_to_best_observed"] is not None
-        ]
-        runtime_values = [
-            float(row["wall_time_ms"])
-            for row in values
-            if row["wall_time_ms"] is not None and row["is_success"]
-        ]
-        suites = sorted({row["suite_name"] for row in values if row["suite_name"]})
-        best_instance_coverage = len(
-            {row["instance_name"] for row in values if row["is_best_observed"]}
-        )
-
-        runs = len(values)
-        successful_runs = sum(1 for row in values if row["is_success"])
-        feasible_runs = sum(1 for row in values if row["feasible"] is True)
-        comparable_runs = sum(1 for row in values if row["is_comparable"])
-        best_run_count = sum(1 for row in values if row["is_best_observed"])
-
-        output.append(
-            {
-                "algorithm_id": algorithm_id,
-                "runs": runs,
-                "successful_runs": successful_runs,
-                "feasible_runs": feasible_runs,
-                "feasible_rate": feasible_runs / runs if runs > 0 else None,
-                "comparable_runs": comparable_runs,
-                "unique_instances": len({row["instance_name"] for row in values}),
-                "unique_suites": len(suites),
-                "suite_names": ",".join(suites),
-                "best_run_count": best_run_count,
-                "best_instance_coverage": best_instance_coverage,
-                "min_gap_to_best_observed": min(gap_values) if gap_values else None,
-                "mean_gap_to_best_observed": safe_mean(gap_values),
-                "median_gap_to_best_observed": safe_median(gap_values),
-                "mean_wall_time_ms": safe_mean(runtime_values),
-                "median_wall_time_ms": safe_median(runtime_values),
-            }
-        )
-
-    return sorted(
-        output,
-        key=lambda row: (
-            float("inf")
-            if row["median_gap_to_best_observed"] is None
-            else float(row["median_gap_to_best_observed"]),
-            -int(row["best_instance_coverage"]),
-            -float(row["feasible_rate"]) if row["feasible_rate"] is not None else 0.0,
-            float("inf")
-            if row["median_wall_time_ms"] is None
-            else float(row["median_wall_time_ms"]),
-            row["algorithm_id"],
-        ),
+    solver_wall_time_us = safe_int(
+        result.get("wall_time_us")
+        if "wall_time_us" in result
+        else result.get("execution", {}).get("wall_time_us")
+        if isinstance(result.get("execution"), dict)
+        else None
     )
 
-
-def build_instance_summary(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for row in rows:
-        grouped[row["instance_name"]].append(row)
-
-    output: list[dict[str, Any]] = []
-
-    for instance_name, values in grouped.items():
-        runtime_values = [
-            float(row["wall_time_ms"])
-            for row in values
-            if row["wall_time_ms"] is not None and row["is_success"]
-        ]
-        best_algorithm_ids = sorted(
-            {row["algorithm_id"] for row in values if row["is_best_observed"]}
-        )
-        seeds = sorted({row["seed"] for row in values if row["seed"] is not None})
-        runs = len(values)
-        successful_runs = sum(1 for row in values if row["is_success"])
-        feasible_runs = sum(1 for row in values if row["feasible"] is True)
-
-        exemplar = values[0]
-        output.append(
-            {
-                "instance_name": instance_name,
-                "runs": runs,
-                "successful_runs": successful_runs,
-                "feasible_runs": feasible_runs,
-                "feasible_rate": feasible_runs / runs if runs > 0 else None,
-                "algorithms_tested": len({row["algorithm_id"] for row in values}),
-                "seeds_tested": len(seeds),
-                "best_observed_objective": exemplar["best_observed_objective"],
-                "best_algorithm_ids": ",".join(best_algorithm_ids),
-                "depot_count": exemplar["depot_count"],
-                "customer_count": exemplar["customer_count"],
-                "salesman_count": exemplar["salesman_count"],
-                "return_to_depot": exemplar["return_to_depot"],
-                "median_wall_time_ms": safe_median(runtime_values),
-            }
-        )
-
-    return sorted(
-        output,
-        key=lambda row: (
-            row["customer_count"] if row["customer_count"] is not None else -1,
-            row["instance_name"],
-        ),
+    solver_wall_time_ms = safe_float(
+        result.get("wall_time_ms")
+        if "wall_time_ms" in result
+        else result.get("execution", {}).get("wall_time_ms")
+        if isinstance(result.get("execution"), dict)
+        else None
     )
 
+    if solver_wall_time_us is None and solver_wall_time_ms is not None:
+        solver_wall_time_us = int(round(solver_wall_time_ms * 1000.0))
 
-def build_algorithm_instance_summary(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    grouped: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
-    for row in rows:
-        grouped[(row["algorithm_id"], row["instance_name"])].append(row)
+    if solver_wall_time_ms is None and solver_wall_time_us is not None:
+        solver_wall_time_ms = solver_wall_time_us / 1000.0
 
-    output: list[dict[str, Any]] = []
+    effective_wall_time_us = solver_wall_time_us if solver_wall_time_us is not None else runner_wall_clock_us
+    effective_wall_time_ms = solver_wall_time_ms if solver_wall_time_ms is not None else runner_wall_clock_ms
+    effective_wall_time_s = effective_wall_time_ms / 1000.0 if effective_wall_time_ms is not None else None
 
-    for (algorithm_id, instance_name), values in grouped.items():
-        feasible_objectives = [
-            float(row["objective"])
-            for row in values
-            if row["objective"] is not None and row["is_comparable"]
-        ]
-        gap_values = [
-            float(row["gap_to_best_observed"])
-            for row in values
-            if row["gap_to_best_observed"] is not None
-        ]
-        runtime_values = [
-            float(row["wall_time_ms"])
-            for row in values
-            if row["wall_time_ms"] is not None and row["is_success"]
-        ]
-        suites = sorted({row["suite_name"] for row in values if row["suite_name"]})
-        exemplar = values[0]
-        runs = len(values)
-        successful_runs = sum(1 for row in values if row["is_success"])
-        feasible_runs = sum(1 for row in values if row["feasible"] is True)
+    entry["objective"] = result.get("objective")
+    entry["feasible"] = result.get("feasible")
+    entry["solver_status"] = result.get("status")
+    entry["solver_wall_time_us"] = solver_wall_time_us
+    entry["solver_wall_time_ms"] = solver_wall_time_ms
+    entry["effective_wall_time_us"] = effective_wall_time_us
+    entry["effective_wall_time_ms"] = effective_wall_time_ms
+    entry["effective_wall_time_s"] = effective_wall_time_s
+    entry["result_algorithm_id"] = result.get("algorithm_id")
+    entry["result_suite_name"] = result.get("suite_name")
 
-        output.append(
-            {
-                "algorithm_id": algorithm_id,
-                "instance_name": instance_name,
-                "runs": runs,
-                "successful_runs": successful_runs,
-                "feasible_runs": feasible_runs,
-                "feasible_rate": feasible_runs / runs if runs > 0 else None,
-                "suite_names": ",".join(suites),
-                "depot_count": exemplar["depot_count"],
-                "customer_count": exemplar["customer_count"],
-                "salesman_count": exemplar["salesman_count"],
-                "return_to_depot": exemplar["return_to_depot"],
-                "best_objective": min(feasible_objectives) if feasible_objectives else None,
-                "mean_objective": safe_mean(feasible_objectives),
-                "median_objective": safe_median(feasible_objectives),
-                "min_gap_to_best_observed": min(gap_values) if gap_values else None,
-                "mean_gap_to_best_observed": safe_mean(gap_values),
-                "median_gap_to_best_observed": safe_median(gap_values),
-                "mean_wall_time_ms": safe_mean(runtime_values),
-                "median_wall_time_ms": safe_median(runtime_values),
-            }
-        )
+    return entry
 
-    return sorted(
-        output,
-        key=lambda row: (
-            row["instance_name"],
-            row["algorithm_id"],
-        ),
-    )
+
+def build_summary_payload(
+    *,
+    config: SuiteConfig,
+    selected_algorithms: tuple[str, ...],
+    config_path: Path,
+    executable: Path,
+    entries: list[dict[str, Any]],
+    dry_run: bool,
+) -> dict[str, Any]:
+    ok_runs = sum(1 for entry in entries if entry["status"] == "ok")
+    failed_runs = sum(1 for entry in entries if entry["status"] == "failed")
+    dry_runs = sum(1 for entry in entries if entry["status"] == "dry_run")
+
+    return {
+        "suite_name": config.suite_name,
+        "description": config.description,
+        "config_path": str(config_path),
+        "executable": str(executable),
+        "configured_algorithms": list(config.algorithms),
+        "selected_algorithms": list(selected_algorithms),
+        "generated_at_utc": utc_now_iso(),
+        "dry_run": dry_run,
+        "total_runs": len(entries),
+        "ok_runs": ok_runs,
+        "failed_runs": failed_runs,
+        "dry_runs": dry_runs,
+        "algorithm_summary": summarize_algorithm_entries(entries),
+        "entries": entries,
+    }
 
 
 def main() -> int:
     args = parse_args()
+    root = repo_root()
 
-    search_roots = args.search_roots or [Path("results/runs")]
-    search_roots = [root.resolve() for root in search_roots]
-    history_dir = args.history_dir.resolve()
-    tables_dir = args.tables_dir.resolve()
+    config_path = resolve_repo_path(root, args.config)
+    executable = resolve_repo_path(root, args.executable)
+    output_root = resolve_repo_path(root, args.output_root)
+    logs_root = resolve_repo_path(root, args.logs_root)
 
-    result_files = discover_result_files(search_roots)
-    if not result_files:
-        print("no result JSON files found", file=sys.stderr)
-        return 1
+    if not config_path.exists():
+        raise FileNotFoundError(f"missing config: {config_path}")
+    if not args.dry_run and not executable.exists():
+        raise FileNotFoundError(f"missing executable: {executable}")
 
-    rows: list[dict[str, Any]] = []
-    skipped = 0
+    config = read_suite_config(config_path, root)
 
-    for path in result_files:
-        try:
-            row = normalize_result(path)
-        except Exception:
-            skipped += 1
-            continue
-        rows.append(row)
+    selected_algorithms = tuple(args.algorithms) if args.algorithms else config.algorithms
+    if not selected_algorithms:
+        raise RuntimeError("no algorithms selected")
 
-    if not rows:
-        print("no valid result files found", file=sys.stderr)
-        return 1
+    instances = discover_instances(config, root)
+    if not instances:
+        raise RuntimeError("no JSON instances matched the suite config")
 
-    annotate_best_observed(rows)
+    entries: list[dict[str, Any]] = []
 
-    rows = sorted(
-        rows,
-        key=lambda row: (
-            row["timestamp_utc"] or "",
-            row["algorithm_id"],
-            row["instance_name"],
-            row["seed"] if row["seed"] is not None else -1,
-            row["run_id"],
+    for algorithm in selected_algorithms:
+        for instance_path in instances:
+            for seed in config.seeds:
+                entry = execute_run(
+                    executable=executable,
+                    algorithm=algorithm,
+                    config=config,
+                    instance_path=instance_path,
+                    seed=seed,
+                    output_root=output_root,
+                    logs_root=logs_root,
+                    root=root,
+                    dry_run=args.dry_run,
+                )
+                entries.append(entry)
+
+                line = f"[{entry['status']}] {algorithm} | {instance_path.stem} seed={seed}"
+                if entry.get("objective") is not None:
+                    line += f" objective={entry['objective']}"
+                if entry.get("effective_wall_time_ms") is not None:
+                    line += f" time_ms={entry['effective_wall_time_ms']:.3f}"
+                print(line)
+
+                if args.fail_fast and entry["status"] == "failed":
+                    summary_path = args.summary_path
+                    if summary_path is None:
+                        summary_path = Path("results/run_summaries") / f"{config.suite_name}_{utc_now_compact()}.json"
+                    write_json_atomic(
+                        resolve_repo_path(root, summary_path),
+                        build_summary_payload(
+                            config=config,
+                            selected_algorithms=selected_algorithms,
+                            config_path=config_path,
+                            executable=executable,
+                            entries=entries,
+                            dry_run=args.dry_run,
+                        ),
+                    )
+                    return 1
+
+    summary_path = args.summary_path
+    if summary_path is None:
+        summary_path = Path("results/run_summaries") / f"{config.suite_name}_{utc_now_compact()}.json"
+
+    write_json_atomic(
+        resolve_repo_path(root, summary_path),
+        build_summary_payload(
+            config=config,
+            selected_algorithms=selected_algorithms,
+            config_path=config_path,
+            executable=executable,
+            entries=entries,
+            dry_run=args.dry_run,
         ),
     )
 
-    algorithm_summary = build_algorithm_summary(rows)
-    instance_summary = build_instance_summary(rows)
-    algorithm_instance_summary = build_algorithm_instance_summary(rows)
-
-    all_runs_fieldnames = [
-        "run_id",
-        "timestamp_utc",
-        "algorithm_id",
-        "suite_name",
-        "instance_name",
-        "instance_path",
-        "seed",
-        "improve_iterations",
-        "depot_count",
-        "customer_count",
-        "salesman_count",
-        "return_to_depot",
-        "objective",
-        "feasible",
-        "status",
-        "route_count",
-        "wall_time_ms",
-        "is_success",
-        "is_comparable",
-        "best_observed_objective",
-        "gap_to_best_observed",
-        "is_best_observed",
-        "result_file",
-    ]
-
-    algorithm_summary_fieldnames = [
-        "algorithm_id",
-        "runs",
-        "successful_runs",
-        "feasible_runs",
-        "feasible_rate",
-        "comparable_runs",
-        "unique_instances",
-        "unique_suites",
-        "suite_names",
-        "best_run_count",
-        "best_instance_coverage",
-        "min_gap_to_best_observed",
-        "mean_gap_to_best_observed",
-        "median_gap_to_best_observed",
-        "mean_wall_time_ms",
-        "median_wall_time_ms",
-    ]
-
-    instance_summary_fieldnames = [
-        "instance_name",
-        "runs",
-        "successful_runs",
-        "feasible_runs",
-        "feasible_rate",
-        "algorithms_tested",
-        "seeds_tested",
-        "best_observed_objective",
-        "best_algorithm_ids",
-        "depot_count",
-        "customer_count",
-        "salesman_count",
-        "return_to_depot",
-        "median_wall_time_ms",
-    ]
-
-    algorithm_instance_summary_fieldnames = [
-        "algorithm_id",
-        "instance_name",
-        "runs",
-        "successful_runs",
-        "feasible_runs",
-        "feasible_rate",
-        "suite_names",
-        "depot_count",
-        "customer_count",
-        "salesman_count",
-        "return_to_depot",
-        "best_objective",
-        "mean_objective",
-        "median_objective",
-        "min_gap_to_best_observed",
-        "mean_gap_to_best_observed",
-        "median_gap_to_best_observed",
-        "mean_wall_time_ms",
-        "median_wall_time_ms",
-    ]
-
-    write_jsonl(history_dir / "all_runs.jsonl", rows)
-    write_csv(history_dir / "all_runs.csv", rows, all_runs_fieldnames)
-    write_csv(tables_dir / "algorithm_summary.csv", algorithm_summary, algorithm_summary_fieldnames)
-    write_csv(tables_dir / "instance_summary.csv", instance_summary, instance_summary_fieldnames)
-    write_csv(
-        tables_dir / "algorithm_instance_summary.csv",
-        algorithm_instance_summary,
-        algorithm_instance_summary_fieldnames,
-    )
-
-    comparable_runs = sum(1 for row in rows if row["is_comparable"])
-    print(f"valid run rows: {len(rows)}")
-    print(f"skipped files: {skipped}")
-    print(f"algorithms: {len(algorithm_summary)}")
-    print(f"instances: {len(instance_summary)}")
-    print(f"comparable runs: {comparable_runs}")
-    return 0
+    return 1 if any(entry["status"] == "failed" for entry in entries) else 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        sys.exit(1)

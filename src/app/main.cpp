@@ -100,7 +100,7 @@ std::string canonical_algorithm_id(std::string_view value) {
         return "random_insertion";
     }
 
-    if (value == "cheapest_insertion") {
+    if (value == "cheapest_insertion" || value == "cheapest-insertion" || value == "ci") {
         return "cheapest_insertion";
     }
 
@@ -473,11 +473,9 @@ mdmtsp::MDMTSPInstance make_generated_instance(const GenerateSpec& spec,
     return instance;
 }
 
-mdmtsp::MDMTSPSolution solve_with_algorithm(
-    const std::string& algorithm_id,
-    const mdmtsp::MDMTSPInstance& instance,
-    mdmtsp::Random& rng
-) {
+mdmtsp::MDMTSPSolution solve_with_algorithm(const std::string& algorithm_id,
+                                            const mdmtsp::MDMTSPInstance& instance,
+                                            mdmtsp::Random& rng) {
     if (algorithm_id == "nearest_neighbour") {
         return mdmtsp::solve_mdmtsp_nearest_neighbour(instance, rng);
     }
@@ -498,13 +496,16 @@ json make_result_json(const mdmtsp::MDMTSPInstance& instance,
                       const std::uint64_t seed,
                       const std::string& algorithm_id,
                       const std::size_t improve_iterations,
-                      const long long wall_time_ms,
+                      const std::uint64_t wall_time_us,
                       const std::string& timestamp_utc,
                       const std::string& run_id,
                       const std::optional<std::string>& suite_name,
                       const std::optional<fs::path>& source_path) {
+    const double wall_time_ms = static_cast<double>(wall_time_us) / 1000.0;
+    const double wall_time_s = static_cast<double>(wall_time_us) / 1000000.0;
+
     json result;
-    result["schema_version"] = 1;
+    result["schema_version"] = 2;
     result["run_id"] = run_id;
     result["timestamp_utc"] = timestamp_utc;
     result["algorithm_id"] = algorithm_id;
@@ -522,7 +523,10 @@ json make_result_json(const mdmtsp::MDMTSPInstance& instance,
     result["feasible"] = solution.feasible;
     result["status"] = solution.status;
     result["route_count"] = solution.routes.size();
+
+    result["wall_time_us"] = wall_time_us;
     result["wall_time_ms"] = wall_time_ms;
+    result["wall_time_s"] = wall_time_s;
 
     result["algorithm"] = {
         {"id", algorithm_id},
@@ -542,7 +546,9 @@ json make_result_json(const mdmtsp::MDMTSPInstance& instance,
 
     result["execution"] = {
         {"seed", seed},
+        {"wall_time_us", wall_time_us},
         {"wall_time_ms", wall_time_ms},
+        {"wall_time_s", wall_time_s},
         {"timestamp_utc", timestamp_utc}
     };
 
@@ -574,10 +580,12 @@ void print_text_summary(const mdmtsp::MDMTSPInstance& instance,
                         const mdmtsp::MDMTSPSolution& solution,
                         const std::string& algorithm_id,
                         const std::uint64_t seed,
-                        const long long wall_time_ms,
+                        const std::uint64_t wall_time_us,
                         const std::string& run_id,
                         const std::optional<fs::path>& source_path,
                         const std::optional<fs::path>& normalized_output_path) {
+    const double wall_time_ms = static_cast<double>(wall_time_us) / 1000.0;
+
     std::cout
         << "Solved MDMTSP instance\n"
         << "  run_id: " << run_id << '\n'
@@ -602,7 +610,8 @@ void print_text_summary(const mdmtsp::MDMTSPInstance& instance,
         << "  feasible: " << (solution.feasible ? "true" : "false") << '\n'
         << "  status: " << solution.status << '\n'
         << "  routes: " << solution.routes.size() << '\n'
-        << "  wall_time_ms: " << wall_time_ms << '\n';
+        << "  wall_time_ms: " << std::fixed << std::setprecision(3) << wall_time_ms << '\n'
+        << "  wall_time_us: " << wall_time_us << '\n';
 }
 
 }  // namespace
@@ -659,9 +668,9 @@ int main(int argc, char** argv) {
         }
 
         const auto finished = std::chrono::steady_clock::now();
-        const auto wall_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-            finished - started
-        ).count();
+        const auto wall_time_us = static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::microseconds>(finished - started).count()
+        );
 
         const bool emit_json = options.json_output || !options.output_path.empty();
         if (emit_json) {
@@ -671,7 +680,7 @@ int main(int argc, char** argv) {
                 effective_seed,
                 options.algorithm_id,
                 options.improve_iterations,
-                static_cast<long long>(wall_time_ms),
+                wall_time_us,
                 timestamp_utc,
                 run_id,
                 options.suite_name,
@@ -691,7 +700,7 @@ int main(int argc, char** argv) {
                 solution,
                 options.algorithm_id,
                 effective_seed,
-                static_cast<long long>(wall_time_ms),
+                wall_time_us,
                 run_id,
                 source_path,
                 normalized_output_path
