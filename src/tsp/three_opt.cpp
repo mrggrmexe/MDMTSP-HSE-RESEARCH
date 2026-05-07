@@ -186,7 +186,7 @@ inline void undo_move(std::vector<Index>& order, std::size_t i, std::size_t j, s
     auto it2 = order.begin() + static_cast<std::ptrdiff_t>(j + 1);
     auto it3 = order.begin() + static_cast<std::ptrdiff_t>(k + 1);
 
-    const std::ptrdiff_t len1 = it2 - it1;
+    //const std::ptrdiff_t len1 = it2 - it1;
     const std::ptrdiff_t len2 = it3 - it2;
 
     switch (mt) {
