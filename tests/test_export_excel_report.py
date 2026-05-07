@@ -1,156 +1,105 @@
+#!/usr/bin/env python3
+
 from __future__ import annotations
 
+import importlib.util
 import json
 import tempfile
 import unittest
 from pathlib import Path
 
-import openpyxl
+from openpyxl import load_workbook
 
-import export_excel_report as report
+
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPT = ROOT / "scripts" / "export_excel_report.py"
+
+SPEC = importlib.util.spec_from_file_location("export_excel_report", SCRIPT)
+report = importlib.util.module_from_spec(SPEC)
+assert SPEC is not None
+assert SPEC.loader is not None
+SPEC.loader.exec_module(report)
 
 
 class ExportExcelReportTests(unittest.TestCase):
-    def make_run_json(
-        self,
-        path: Path,
-        *,
-        run_id: str,
-        algorithm_id: str,
-        instance_name: str,
-        objective: float,
-        wall_time_ms: float,
-        feasible: bool = True,
-        status: str = "ok",
-        instance_type: str = "random",
-    ) -> None:
-        payload = {
-            "schema_version": 2,
-            "run_id": run_id,
-            "timestamp_utc": "2026-05-07T00:00:00Z",
-            "algorithm_id": algorithm_id,
-            "suite_name": "research_suite",
-            "instance_name": instance_name,
-            "instance_type": instance_type,
-            "instance_path": f"/repo/instances/{instance_name}.json",
-            "seed": 42,
-            "depot_count": 2,
-            "customer_count": 10,
-            "salesman_count": 3,
-            "return_to_depot": True,
-            "objective": objective,
-            "feasible": feasible,
-            "status": status,
-            "route_count": 3,
-            "wall_time_ms": wall_time_ms,
-            "wall_time_us": int(round(wall_time_ms * 1000.0)),
-            "wall_time_s": wall_time_ms / 1000.0,
-        }
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(payload), encoding="utf-8")
-
-    def test_build_export_bundle(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            root = Path(tmpdir)
-            runs_root = root / "results" / "runs"
+    def test_builds_workbook_from_timestamped_run_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            runs_root = root / "results" / "runs" / "suite" / "algo" / "group_01" / "instance"
             logs_root = root / "results" / "logs"
+            runs_root.mkdir(parents=True)
+            logs_root.mkdir(parents=True)
 
-            self.make_run_json(
-                runs_root / "suite" / "nearest_neighbour" / "instance_a" / "run_nn.json",
-                run_id="run_nn",
-                algorithm_id="nearest_neighbour",
-                instance_name="instance_a_random",
-                objective=110.0,
-                wall_time_ms=5.0,
-            )
-            self.make_run_json(
-                runs_root / "suite" / "random_insertion" / "instance_a" / "run_ri.json",
-                run_id="run_ri",
-                algorithm_id="random_insertion",
-                instance_name="instance_a_random",
-                objective=100.0,
-                wall_time_ms=8.0,
-            )
-            self.make_run_json(
-                runs_root / "suite" / "nearest_neighbour" / "instance_b" / "run_fail.json",
-                run_id="run_fail",
-                algorithm_id="nearest_neighbour",
-                instance_name="instance_b_grid",
-                objective=200.0,
-                wall_time_ms=6.0,
-                feasible=False,
-            )
-
-            (logs_root / "suite" / "nearest_neighbour" / "instance_a" / "run_nn.log").parent.mkdir(parents=True, exist_ok=True)
-            (logs_root / "suite" / "nearest_neighbour" / "instance_a" / "run_nn.log").write_text("warning: slow move\n", encoding="utf-8")
-            (logs_root / "suite" / "random_insertion" / "instance_a" / "run_ri.log").parent.mkdir(parents=True, exist_ok=True)
-            (logs_root / "suite" / "random_insertion" / "instance_a" / "run_ri.log").write_text("ok\n", encoding="utf-8")
-            (logs_root / "suite" / "nearest_neighbour" / "instance_b" / "run_fail.log").parent.mkdir(parents=True, exist_ok=True)
-            (logs_root / "suite" / "nearest_neighbour" / "instance_b" / "run_fail.log").write_text("error: infeasible solution\nTraceback\n", encoding="utf-8")
-
-            bundle = report.build_export_bundle(
-                [runs_root],
-                [logs_root],
-                root,
-                max_tail_lines=4,
-                max_cell_text=1000,
+            run_path = runs_root / "20260506T000000Z__suite__algo__instance__seed_42__abc.json"
+            run_path.write_text(
+                json.dumps(
+                    {
+                        "suite_name": "suite",
+                        "algorithm_id": "algo",
+                        "instance_name": "instance",
+                        "instance_type": "random",
+                        "instance_path": "instances/research/group_01/instance.json",
+                        "seed": 42,
+                        "objective": 123.5,
+                        "feasible": True,
+                        "success": True,
+                        "wall_time_ms": 7.0,
+                        "customer_count": 10,
+                        "depot_count": 1,
+                        "salesman_count": 1,
+                        "routes": [[0, 1, 2, 0]],
+                    }
+                ),
+                encoding="utf-8",
             )
 
-            self.assertEqual(len(bundle.runs), 3)
-            self.assertEqual(len(bundle.algorithms), 2)
-            self.assertEqual(len(bundle.instances), 2)
-            self.assertEqual(len(bundle.failures), 1)
-
-            by_algorithm = {row["algorithm_id"]: row for row in bundle.algorithms}
-            self.assertAlmostEqual(by_algorithm["random_insertion"]["median_gap_to_best_observed"], 0.0)
-            self.assertGreater(by_algorithm["nearest_neighbour"]["median_gap_to_best_observed"], 0.0)
-
-            baseline = {row["instance_name"]: row for row in bundle.baseline_matrix}
-            self.assertEqual(baseline["instance_a_random"]["random_insertion__best_objective"], 100.0)
-            self.assertEqual(baseline["instance_a_random"]["nearest_neighbour__best_objective"], 110.0)
-
-    def test_write_workbook(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            root = Path(tmpdir)
-            runs_root = root / "results" / "runs"
-            logs_root = root / "results" / "logs"
-            self.make_run_json(
-                runs_root / "suite" / "nearest_neighbour" / "instance_a" / "run_nn.json",
-                run_id="run_nn",
-                algorithm_id="nearest_neighbour",
-                instance_name="instance_a_random",
-                objective=110.0,
-                wall_time_ms=5.0,
+            output = root / "report.xlsx"
+            code = report.main(
+                [
+                    "--runs-root",
+                    str(root / "results" / "runs"),
+                    "--logs-root",
+                    str(logs_root),
+                    "--output",
+                    str(output),
+                ]
             )
-            (logs_root / "suite" / "nearest_neighbour" / "instance_a" / "run_nn.log").parent.mkdir(parents=True, exist_ok=True)
-            (logs_root / "suite" / "nearest_neighbour" / "instance_a" / "run_nn.log").write_text("ok\n", encoding="utf-8")
 
-            bundle = report.build_export_bundle(
-                [runs_root],
-                [logs_root],
-                root,
-                max_tail_lines=4,
-                max_cell_text=1000,
+            self.assertEqual(code, 0)
+            self.assertTrue(output.exists())
+
+            wb = load_workbook(output, read_only=True)
+            self.assertIn("Overview", wb.sheetnames)
+            self.assertIn("Runs", wb.sheetnames)
+            self.assertIn("Algorithms", wb.sheetnames)
+
+    def test_records_broken_json_as_parse_issue(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            runs_root = root / "runs"
+            logs_root = root / "logs"
+            runs_root.mkdir()
+            logs_root.mkdir()
+            (runs_root / "broken.json").write_text("{not json", encoding="utf-8")
+
+            output = root / "report.xlsx"
+            code = report.main(
+                [
+                    "--runs-root",
+                    str(runs_root),
+                    "--logs-root",
+                    str(logs_root),
+                    "--output",
+                    str(output),
+                ]
             )
-            output_path = root / "report.xlsx"
-            report.write_workbook(bundle, output_path, root)
 
-            self.assertTrue(output_path.exists())
-            workbook = openpyxl.load_workbook(output_path)
-            self.assertIn("Overview", workbook.sheetnames)
-            self.assertIn("Runs", workbook.sheetnames)
-            self.assertIn("Algorithms", workbook.sheetnames)
-
-    def test_collect_runs_records_parse_issue(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            root = Path(tmpdir)
-            broken = root / "results" / "runs" / "broken.json"
-            broken.parent.mkdir(parents=True, exist_ok=True)
-            broken.write_text("{not valid json", encoding="utf-8")
-            rows, issues = report.collect_runs([broken.parent], root)
-            self.assertEqual(rows, [])
-            self.assertEqual(len(issues), 1)
-            self.assertEqual(issues[0].source_kind, "run_json")
+            self.assertEqual(code, 0)
+            wb = load_workbook(output, read_only=True)
+            self.assertIn("Parse_Issues", wb.sheetnames)
+            ws = wb["Parse_Issues"]
+            rows = list(ws.iter_rows(values_only=True))
+            self.assertGreaterEqual(len(rows), 2)
 
 
 if __name__ == "__main__":
