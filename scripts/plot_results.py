@@ -1,511 +1,386 @@
+#!/usr/bin/env python3
+
 from __future__ import annotations
 
 import argparse
 import csv
-import math
-import os
+import json
+import subprocess
 import sys
-from concurrent.futures import ProcessPoolExecutor, as_completed
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Sequence
 
-import matplotlib
-matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 
 
-DEFAULT_TABLES_ROOT = Path("results/tables")
-DEFAULT_RUNS_ROOT = Path("results/runs")
-DEFAULT_OUTPUT_ROOT = Path("results/plots")
-DEFAULT_MAX_SOLUTION_CUSTOMERS = 10_000
-
-
-@dataclass(frozen=True)
-class RenderTask:
-    run_json: str
-    output_png: str
-    max_customers: int
-    overwrite: bool
-    dpi: int
-    figure_width: float
-    figure_height: float
-    annotate_depots: bool
-    no_legend: bool
-    route_color_mode: str
-
-
-@dataclass(frozen=True)
-class RenderResult:
-    run_json: str
-    output_png: str
-    status: str
-    customer_count: int | None
-    algorithm_id: str | None
-    instance_name: str | None
-    message: str
-
-
-def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Generate research plots and solution route visualizations for MDMTSP runs."
+        description="Build aggregate plots and optional solution visualizations from results/."
     )
-    parser.add_argument("--tables-root", type=Path, default=DEFAULT_TABLES_ROOT)
-    parser.add_argument("--runs-root", type=Path, default=DEFAULT_RUNS_ROOT)
-    parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
-    parser.add_argument("--overwrite", action="store_true")
-
     parser.add_argument(
-        "--solution-visualizations",
-        dest="solution_visualizations",
-        action="store_true",
-        default=True,
-        help="Render route maps for run.json files. Enabled by default.",
+        "--tables-root",
+        type=Path,
+        default=Path("results/tables"),
+        help="Directory with aggregated CSV tables.",
+    )
+    parser.add_argument(
+        "--runs-root",
+        type=Path,
+        default=Path("results/runs"),
+        help="Directory with run JSON files.",
+    )
+    parser.add_argument(
+        "--plots-root",
+        type=Path,
+        default=Path("results/plots"),
+        help="Output directory for generated plots.",
     )
     parser.add_argument(
         "--no-solution-visualizations",
-        dest="solution_visualizations",
-        action="store_false",
-        help="Disable route-map rendering and generate only aggregate plots.",
+        action="store_true",
+        help="Disable per-solution PNG rendering.",
     )
     parser.add_argument(
         "--max-solution-customers",
         type=int,
-        default=DEFAULT_MAX_SOLUTION_CUSTOMERS,
-        help="Render route maps only for instances with customer_count <= this value.",
+        default=10_000,
+        help="Render route visualizations only for runs with customer_count <= this value.",
     )
     parser.add_argument(
-        "--solution-workers",
-        type=int,
-        default=max(1, min(4, (os.cpu_count() or 2) // 2)),
-        help="Number of worker processes for solution rendering.",
-    )
-    parser.add_argument("--solution-dpi", type=int, default=180)
-    parser.add_argument("--solution-figure-width", type=float, default=16.0)
-    parser.add_argument("--solution-figure-height", type=float, default=9.0)
-    parser.add_argument("--annotate-depots", action="store_true")
-    parser.add_argument("--no-solution-legend", action="store_true")
-    parser.add_argument(
-        "--solution-route-color-mode",
-        choices=("auto", "route", "depot", "mono"),
-        default="auto",
-    )
-    parser.add_argument(
-        "--skip-aggregate-plots",
+        "--overwrite",
         action="store_true",
-        help="Only render solution maps; skip aggregate summary figures.",
+        help="Overwrite existing plot files.",
     )
-    return parser.parse_args(argv)
+    return parser.parse_args()
 
 
-def read_csv_dicts(path: Path) -> list[dict[str, str]]:
+def ensure_dir(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+
+
+def read_csv_optional(path: Path) -> pd.DataFrame | None:
     if not path.exists():
-        return []
-    with path.open("r", encoding="utf-8-sig", newline="") as file:
-        return list(csv.DictReader(file))
-
-
-def as_float(row: dict[str, str], key: str) -> float | None:
-    value = row.get(key)
-    if value is None or value == "":
         return None
-    try:
-        result = float(value)
-    except ValueError:
-        return None
-    if not math.isfinite(result):
-        return None
-    return result
+    return pd.read_csv(path)
 
 
-def as_int(row: dict[str, str], key: str) -> int | None:
-    value = row.get(key)
-    if value is None or value == "":
-        return None
-    try:
-        return int(float(value))
-    except ValueError:
-        return None
+def pick_first_existing_column(df: pd.DataFrame, candidates: list[str]) -> str | None:
+    for name in candidates:
+        if name in df.columns:
+            return name
+    return None
 
 
-def ensure_parent(path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
+def as_numeric(series: pd.Series) -> pd.Series:
+    return pd.to_numeric(series, errors="coerce")
 
 
-def _finish_plot(output_path: Path, dpi: int = 180) -> None:
-    ensure_parent(output_path)
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=dpi)
-    plt.close()
+def plot_history_comparison(tables_root: Path, plots_root: Path, overwrite: bool) -> None:
+    src = tables_root / "algorithm_summary.csv"
+    dst = plots_root / "history_comparison.png"
+
+    if dst.exists() and not overwrite:
+        return
+
+    df = read_csv_optional(src)
+    if df is None or df.empty:
+        print(
+            f"plot_results.py: skipped history comparison (missing or empty {src})",
+            file=sys.stderr,
+        )
+        return
+
+    algo_col = pick_first_existing_column(df, ["algorithm_id", "algorithm", "name"])
+    gap_col = pick_first_existing_column(
+        df,
+        [
+            "median_gap_to_best_observed",
+            "mean_gap_to_best_observed",
+            "min_gap_to_best_observed",
+        ],
+    )
+    time_col = pick_first_existing_column(
+        df,
+        [
+            "median_wall_time_ms",
+            "mean_wall_time_ms",
+            "p90_wall_time_ms",
+        ],
+    )
+
+    if algo_col is None or gap_col is None or time_col is None:
+        print(
+            "plot_results.py: skipped history comparison (required columns are missing)",
+            file=sys.stderr,
+        )
+        return
+
+    work = df[[algo_col, gap_col, time_col]].copy()
+    work[gap_col] = as_numeric(work[gap_col])
+    work[time_col] = as_numeric(work[time_col])
+    work = work.dropna(subset=[gap_col, time_col])
+
+    if work.empty:
+        print(
+            "plot_results.py: skipped history comparison (no numeric rows)",
+            file=sys.stderr,
+        )
+        return
+
+    work = work.sort_values(by=[gap_col, time_col], ascending=[True, True]).reset_index(drop=True)
+
+    x = np.arange(len(work))
+    fig, ax1 = plt.subplots(figsize=(12.0, 6.5))
+
+    ax1.bar(x, work[gap_col], alpha=0.8)
+    ax1.set_ylabel("median gap to best observed, %", fontsize=11)
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(work[algo_col], rotation=20, ha="right", fontsize=10)
+    ax1.set_title("Algorithm-level comparison", fontsize=16, pad=12)
+    ax1.grid(axis="y", alpha=0.25)
+
+    ax2 = ax1.twinx()
+    ax2.plot(x, work[time_col], marker="o", linewidth=2.0)
+    ax2.set_ylabel("median wall time, ms", fontsize=11)
+
+    fig.subplots_adjust(left=0.10, right=0.90, top=0.88, bottom=0.22)
+    fig.savefig(dst, dpi=200, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
 
 
-def plot_algorithm_gap_summary(tables_root: Path, output_root: Path) -> Path | None:
-    rows = read_csv_dicts(tables_root / "algorithm_summary.csv")
-    points: list[tuple[str, float, float | None]] = []
-    for row in rows:
-        algorithm = row.get("algorithm_id", "")
-        median_gap = as_float(row, "median_gap_to_best_observed")
-        mean_gap = as_float(row, "mean_gap_to_best_observed")
-        if algorithm and median_gap is not None:
-            points.append((algorithm, median_gap, mean_gap))
-    if not points:
-        return None
-
-    points.sort(key=lambda item: item[1])
-    labels = [item[0] for item in points]
-    medians = [100.0 * item[1] for item in points]
-    means = [100.0 * item[2] if item[2] is not None else np.nan for item in points]
-
-    output_path = output_root / "algorithm_gap_summary.png"
-    x = np.arange(len(labels))
-    plt.figure(figsize=(max(8.0, len(labels) * 1.15), 5.2))
-    plt.bar(x, medians, label="median gap")
-    if any(math.isfinite(v) for v in means):
-        plt.plot(x, means, marker="o", linewidth=1.5, label="mean gap")
-    plt.xticks(x, labels, rotation=30, ha="right")
-    plt.ylabel("gap to best observed, %")
-    plt.title("Algorithm quality summary")
-    plt.grid(axis="y", linewidth=0.4, alpha=0.35)
-    plt.legend()
-    _finish_plot(output_path)
-    return output_path
+def compute_heatmap_height(n_rows: int) -> float:
+    base_height = 4.0
+    row_height = 1.10
+    return max(6.0, base_height + row_height * max(n_rows, 1))
 
 
-def plot_time_quality_tradeoff(tables_root: Path, output_root: Path) -> Path | None:
-    rows = read_csv_dicts(tables_root / "algorithm_summary.csv")
-    points: list[tuple[str, float, float, int | None]] = []
-    for row in rows:
-        algorithm = row.get("algorithm_id", "")
-        median_gap = as_float(row, "median_gap_to_best_observed")
-        median_time = as_float(row, "median_wall_time_ms")
-        runs = as_int(row, "runs")
-        if algorithm and median_gap is not None and median_time is not None:
-            points.append((algorithm, 100.0 * median_gap, median_time, runs))
-    if not points:
-        return None
+def plot_instance_quality_heatmap(tables_root: Path, plots_root: Path, overwrite: bool) -> None:
+    src = tables_root / "algorithm_instance_summary.csv"
+    dst = plots_root / "instance_gap_heatmap.png"
 
-    output_path = output_root / "time_quality_tradeoff.png"
-    plt.figure(figsize=(8.2, 5.8))
-    for algorithm, gap, time_ms, runs in points:
-        size = 60.0 if runs is None else max(60.0, min(320.0, 20.0 + 4.0 * runs))
-        plt.scatter(time_ms, gap, s=size, alpha=0.75)
-        plt.annotate(algorithm, (time_ms, gap), xytext=(5, 4), textcoords="offset points", fontsize=9)
-    plt.xlabel("median wall time, ms")
-    plt.ylabel("median gap to best observed, %")
-    plt.title("Quality/time trade-off")
-    plt.grid(True, linewidth=0.4, alpha=0.35)
-    if any(p[2] > 0 for p in points):
-        plt.xscale("log")
-    _finish_plot(output_path)
-    return output_path
+    if dst.exists() and not overwrite:
+        return
 
+    df = read_csv_optional(src)
+    if df is None or df.empty:
+        print(
+            f"plot_results.py: skipped heatmap (missing or empty {src})",
+            file=sys.stderr,
+        )
+        return
 
-def plot_instance_gap_heatmap(tables_root: Path, output_root: Path, max_instances: int = 80) -> Path | None:
-    rows = read_csv_dicts(tables_root / "algorithm_instance_summary.csv")
-    if not rows:
-        return None
+    algo_col = pick_first_existing_column(df, ["algorithm_id", "algorithm"])
+    instance_col = pick_first_existing_column(df, ["instance_name", "instance"])
+    gap_col = pick_first_existing_column(
+        df,
+        [
+            "median_gap_to_best_observed",
+            "mean_gap_to_best_observed",
+            "min_gap_to_best_observed",
+        ],
+    )
 
-    algorithms = sorted({row.get("algorithm_id", "") for row in rows if row.get("algorithm_id")})
-    instances = sorted({row.get("instance_name", "") for row in rows if row.get("instance_name")})
-    if not algorithms or not instances:
-        return None
+    if algo_col is None or instance_col is None or gap_col is None:
+        print(
+            "plot_results.py: skipped heatmap (required columns are missing)",
+            file=sys.stderr,
+        )
+        return
 
-    if len(instances) > max_instances:
-        def instance_size(name: str) -> tuple[int, str]:
-            for token in name.split("_"):
-                if token.isdigit():
-                    return (int(token), name)
-            return (10**9, name)
-        instances = sorted(instances, key=instance_size)[:max_instances]
+    work = df[[algo_col, instance_col, gap_col]].copy()
+    work[gap_col] = as_numeric(work[gap_col])
+    work = work.dropna(subset=[gap_col])
 
-    alg_index = {name: idx for idx, name in enumerate(algorithms)}
-    inst_index = {name: idx for idx, name in enumerate(instances)}
-    matrix = np.full((len(algorithms), len(instances)), np.nan, dtype=float)
-    for row in rows:
-        alg = row.get("algorithm_id", "")
-        inst = row.get("instance_name", "")
-        gap = as_float(row, "median_gap_to_best_observed")
-        if alg in alg_index and inst in inst_index and gap is not None:
-            matrix[alg_index[alg], inst_index[inst]] = 100.0 * gap
+    if work.empty:
+        print("plot_results.py: skipped heatmap (no numeric rows)", file=sys.stderr)
+        return
 
-    output_path = output_root / "instance_gap_heatmap.png"
-    width = max(12.0, min(28.0, len(instances) * 0.28))
-    height = max(4.8, len(algorithms) * 0.72)
-    plt.figure(figsize=(width, height))
-    image = plt.imshow(matrix, aspect="auto", interpolation="nearest")
-    plt.colorbar(image, label="median gap, %")
-    plt.yticks(np.arange(len(algorithms)), algorithms)
-    tick_step = max(1, len(instances) // 30)
-    shown_ticks = np.arange(0, len(instances), tick_step)
-    plt.xticks(shown_ticks, [instances[idx] for idx in shown_ticks], rotation=75, ha="right", fontsize=7)
-    plt.title("Instance-level quality heatmap")
-    _finish_plot(output_path, dpi=170)
-    return output_path
+    pivot = (
+        work.pivot_table(
+            index=algo_col,
+            columns=instance_col,
+            values=gap_col,
+            aggfunc="median",
+        ).sort_index()
+    )
 
+    if pivot.empty:
+        print("plot_results.py: skipped heatmap (pivot is empty)", file=sys.stderr)
+        return
 
-def plot_instance_type_summary(tables_root: Path, output_root: Path) -> Path | None:
-    rows = read_csv_dicts(tables_root / "algorithm_instance_type_summary.csv")
-    if not rows:
-        return None
+    fig_height = compute_heatmap_height(pivot.shape[0])
 
-    algorithms = sorted({row.get("algorithm_id", "") for row in rows if row.get("algorithm_id")})
-    instance_types = sorted({row.get("instance_type", "") for row in rows if row.get("instance_type")})
-    if not algorithms or not instance_types:
-        return None
+    fig, ax = plt.subplots(figsize=(16.0, fig_height))
+    im = ax.imshow(pivot.values, aspect="auto", cmap="viridis")
 
-    values = {alg: [np.nan] * len(instance_types) for alg in algorithms}
-    type_index = {name: idx for idx, name in enumerate(instance_types)}
-    for row in rows:
-        alg = row.get("algorithm_id", "")
-        typ = row.get("instance_type", "")
-        gap = as_float(row, "median_gap_to_best_observed")
-        if alg in values and typ in type_index and gap is not None:
-            values[alg][type_index[typ]] = 100.0 * gap
+    ax.set_title("Instance-level quality heatmap", fontsize=16, pad=10)
 
-    output_path = output_root / "instance_type_gap_summary.png"
-    x = np.arange(len(instance_types))
-    width = 0.82 / max(1, len(algorithms))
-    plt.figure(figsize=(max(9.0, len(instance_types) * 1.2), 5.8))
-    for idx, alg in enumerate(algorithms):
-        offset = (idx - (len(algorithms) - 1) / 2.0) * width
-        plt.bar(x + offset, values[alg], width=width, label=alg)
-    plt.xticks(x, instance_types, rotation=20, ha="right")
-    plt.ylabel("median gap to best observed, %")
-    plt.title("Quality by instance type")
-    plt.grid(axis="y", linewidth=0.4, alpha=0.35)
-    plt.legend()
-    _finish_plot(output_path)
-    return output_path
+    ax.set_xticks(np.arange(pivot.shape[1]))
+    ax.set_xticklabels(pivot.columns, rotation=75, ha="right", fontsize=9)
+
+    ax.set_yticks(np.arange(pivot.shape[0]))
+    ax.set_yticklabels(pivot.index, fontsize=11)
+
+    cbar = fig.colorbar(im, ax=ax)
+    cbar.set_label("median gap, %", fontsize=12)
+
+    fig.subplots_adjust(left=0.18, right=0.93, top=0.90, bottom=0.35)
+    fig.savefig(dst, dpi=200, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
 
 
-def plot_history_comparison(tables_root: Path, output_root: Path) -> Path | None:
-    rows = read_csv_dicts(tables_root.parent / "history" / "all_runs.csv")
-    if not rows:
-        rows = read_csv_dicts(tables_root / "algorithm_instance_summary.csv")
-    if not rows:
-        return None
-
-    grouped: dict[str, list[float]] = {}
-    for row in rows:
-        alg = row.get("algorithm_id", "")
-        gap = as_float(row, "gap_to_best_observed")
-        if gap is None:
-            gap = as_float(row, "median_gap_to_best_observed")
-        if alg and gap is not None:
-            grouped.setdefault(alg, []).append(100.0 * gap)
-    if not grouped:
-        return None
-
-    labels = sorted(grouped)
-    data = [grouped[label] for label in labels]
-    output_path = output_root / "history_comparison.png"
-    plt.figure(figsize=(max(8.0, len(labels) * 1.15), 5.4))
-    plt.boxplot(data, labels=labels, showfliers=False)
-    plt.xticks(rotation=25, ha="right")
-    plt.ylabel("gap to best observed, %")
-    plt.title("Distribution of solution quality over runs")
-    plt.grid(axis="y", linewidth=0.4, alpha=0.35)
-    _finish_plot(output_path)
-    return output_path
-
-
-def generate_aggregate_plots(tables_root: Path, output_root: Path) -> list[Path]:
-    output_root.mkdir(parents=True, exist_ok=True)
-    created: list[Path] = []
-    for fn in (
-        plot_algorithm_gap_summary,
-        plot_time_quality_tradeoff,
-        plot_instance_gap_heatmap,
-        plot_instance_type_summary,
-        plot_history_comparison,
-    ):
-        try:
-            path = fn(tables_root, output_root)
-        except Exception as exc:  # noqa: BLE001
-            print(f"plot_results.py: failed to generate {fn.__name__}: {exc}", file=sys.stderr)
-            continue
-        if path is not None:
-            created.append(path)
-    return created
-
-
-def discover_run_json_files(runs_root: Path) -> list[Path]:
+def iter_run_jsons(runs_root: Path):
     if not runs_root.exists():
-        return []
-
-    candidates: list[Path] = []
-    for path in runs_root.rglob("*.json"):
-        if not path.is_file():
-            continue
-        name = path.name.lower()
-        if name in {"summary.json", "manifest.json", "metadata.json"}:
-            continue
-        candidates.append(path)
-    return sorted(candidates)
+        return
+    for path in sorted(runs_root.rglob("*.json")):
+        yield path
 
 
-def solution_output_path(run_json: Path, runs_root: Path, output_root: Path) -> Path:
+def safe_load_json(path: Path) -> dict | None:
     try:
-        relative_parent = run_json.parent.relative_to(runs_root)
-    except ValueError:
-        relative_parent = Path(run_json.parent.name)
-    return output_root / "solutions" / relative_parent / f"{run_json.stem}__solution.png"
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
 
 
-def _render_solution_worker(task: RenderTask) -> RenderResult:
-    try:
-        from visualize_solution import (  # type: ignore
-            VisualizationOptions,
-            VisualizeSolutionError,
-            load_instance,
-            load_run,
-            render_solution,
-            resolve_instance_path,
+def write_solution_manifest(manifest_path: Path, rows: list[dict[str, str]]) -> None:
+    with manifest_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=["run_json", "status", "output_png", "reason"],
         )
-    except Exception as exc:  # noqa: BLE001
-        return RenderResult(task.run_json, task.output_png, "error", None, None, None, f"cannot import visualize_solution: {exc}")
-
-    run_path = Path(task.run_json)
-    output_path = Path(task.output_png)
-    try:
-        if output_path.exists() and not task.overwrite:
-            return RenderResult(str(run_path), str(output_path), "skipped_existing", None, None, None, "output already exists")
-
-        run = load_run(run_path)
-        instance_path = resolve_instance_path(run, None)
-        instance = load_instance(instance_path)
-        if instance.customer_count > task.max_customers:
-            return RenderResult(
-                str(run_path),
-                str(output_path),
-                "skipped_too_large",
-                instance.customer_count,
-                run.algorithm_id,
-                instance.name,
-                f"customer_count={instance.customer_count} > {task.max_customers}",
-            )
-
-        options = VisualizationOptions(
-            output_path=output_path,
-            dpi=task.dpi,
-            figure_width=task.figure_width,
-            figure_height=task.figure_height,
-            annotate_depots=task.annotate_depots,
-            show_legend=not task.no_legend,
-            equal_aspect=True,
-            route_color_mode=task.route_color_mode,
-            line_width=None,
-            customer_size=None,
-            depot_size=None,
-            title=None,
-            transparent=False,
-            pad_fraction=0.04,
-        )
-        render_solution(run, instance, options)
-        return RenderResult(str(run_path), str(output_path), "rendered", instance.customer_count, run.algorithm_id, instance.name, "ok")
-    except Exception as exc:  # noqa: BLE001
-        return RenderResult(str(run_path), str(output_path), "error", None, None, None, str(exc))
-
-
-def write_solution_manifest(results: Sequence[RenderResult], output_root: Path) -> Path:
-    path = output_root / "solutions" / "solution_render_manifest.csv"
-    ensure_parent(path)
-    fieldnames = ["status", "run_json", "output_png", "customer_count", "algorithm_id", "instance_name", "message"]
-    with path.open("w", encoding="utf-8", newline="") as file:
-        writer = csv.DictWriter(file, fieldnames=fieldnames)
         writer.writeheader()
-        for result in results:
-            writer.writerow(
+        writer.writerows(rows)
+
+
+def render_solution_visualizations(
+    runs_root: Path,
+    plots_root: Path,
+    max_solution_customers: int,
+    overwrite: bool,
+) -> int:
+    script_path = Path(__file__).resolve().parent / "visualize_solution.py"
+    solutions_root = plots_root / "solutions"
+    ensure_dir(solutions_root)
+
+    manifest_path = solutions_root / "solution_render_manifest.csv"
+    rows: list[dict[str, str]] = []
+    errors = 0
+
+    if not script_path.exists():
+        rows.append(
+            {
+                "run_json": "",
+                "status": "error",
+                "output_png": "",
+                "reason": f"visualize_solution.py not found: {script_path}",
+            }
+        )
+        write_solution_manifest(manifest_path, rows)
+        print(
+            f"plot_results.py: visualize_solution.py not found; wrote {manifest_path}",
+            file=sys.stderr,
+        )
+        return 1
+
+    for run_path in iter_run_jsons(runs_root):
+        payload = safe_load_json(run_path)
+        if payload is None:
+            rows.append(
                 {
-                    "status": result.status,
-                    "run_json": result.run_json,
-                    "output_png": result.output_png,
-                    "customer_count": "" if result.customer_count is None else result.customer_count,
-                    "algorithm_id": result.algorithm_id or "",
-                    "instance_name": result.instance_name or "",
-                    "message": result.message,
+                    "run_json": str(run_path),
+                    "status": "skip",
+                    "output_png": "",
+                    "reason": "invalid_json",
                 }
             )
-    return path
+            continue
 
+        customer_count = payload.get("customer_count")
+        if isinstance(customer_count, (int, float)) and int(customer_count) > max_solution_customers:
+            rows.append(
+                {
+                    "run_json": str(run_path),
+                    "status": "skip",
+                    "output_png": "",
+                    "reason": f"customer_count>{max_solution_customers}",
+                }
+            )
+            continue
 
-def render_solution_visualizations(args: argparse.Namespace) -> list[RenderResult]:
-    runs_root = args.runs_root.expanduser().resolve()
-    output_root = args.output_root.expanduser().resolve()
-    run_files = discover_run_json_files(runs_root)
-    tasks = [
-        RenderTask(
-            run_json=str(path.resolve()),
-            output_png=str(solution_output_path(path.resolve(), runs_root, output_root)),
-            max_customers=int(args.max_solution_customers),
-            overwrite=bool(args.overwrite),
-            dpi=int(args.solution_dpi),
-            figure_width=float(args.solution_figure_width),
-            figure_height=float(args.solution_figure_height),
-            annotate_depots=bool(args.annotate_depots),
-            no_legend=bool(args.no_solution_legend),
-            route_color_mode=str(args.solution_route_color_mode),
+        rel = run_path.relative_to(runs_root)
+        output_png = (solutions_root / rel).with_suffix(".png")
+        ensure_dir(output_png.parent)
+
+        if output_png.exists() and not overwrite:
+            rows.append(
+                {
+                    "run_json": str(run_path),
+                    "status": "skip",
+                    "output_png": str(output_png),
+                    "reason": "exists",
+                }
+            )
+            continue
+
+        proc = subprocess.run(
+            [sys.executable, str(script_path), str(run_path), "--output", str(output_png)],
+            text=True,
+            capture_output=True,
+            check=False,
         )
-        for path in run_files
-    ]
 
-    if not tasks:
-        manifest = write_solution_manifest([], output_root)
-        print(f"plot_results.py: no solution JSON files found under {runs_root}")
-        print(f"plot_results.py: wrote {manifest}")
-        return []
+        if proc.returncode == 0:
+            rows.append(
+                {
+                    "run_json": str(run_path),
+                    "status": "rendered",
+                    "output_png": str(output_png),
+                    "reason": "",
+                }
+            )
+        else:
+            errors += 1
+            rows.append(
+                {
+                    "run_json": str(run_path),
+                    "status": "error",
+                    "output_png": str(output_png),
+                    "reason": (proc.stderr or proc.stdout).strip(),
+                }
+            )
 
-    workers = max(1, int(args.solution_workers))
-    results: list[RenderResult] = []
-    if workers == 1:
-        for task in tasks:
-            result = _render_solution_worker(task)
-            results.append(result)
-            _print_solution_result(result)
-    else:
-        with ProcessPoolExecutor(max_workers=workers) as executor:
-            future_to_task = {executor.submit(_render_solution_worker, task): task for task in tasks}
-            for future in as_completed(future_to_task):
-                result = future.result()
-                results.append(result)
-                _print_solution_result(result)
+    write_solution_manifest(manifest_path, rows)
 
-    results.sort(key=lambda item: item.run_json)
-    manifest = write_solution_manifest(results, output_root)
-    print(f"plot_results.py: wrote {manifest}")
-    return results
+    if errors:
+        print(
+            f"plot_results.py: {errors} solution render errors; see manifest\n"
+            f"plot_results.py: wrote {manifest_path}",
+            file=sys.stderr,
+        )
 
-
-def _print_solution_result(result: RenderResult) -> None:
-    if result.status == "rendered":
-        print(f"[solution] rendered {result.output_png}")
-    elif result.status.startswith("skipped"):
-        print(f"[solution] {result.status}: {result.run_json}")
-    else:
-        print(f"[solution] error: {result.run_json}: {result.message}", file=sys.stderr)
+    return errors
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    args = parse_args(argv)
-    output_root = args.output_root.expanduser().resolve()
-    tables_root = args.tables_root.expanduser().resolve()
+def main() -> int:
+    args = parse_args()
 
-    if not args.skip_aggregate_plots:
-        created = generate_aggregate_plots(tables_root, output_root)
-        for path in created:
-            print(f"[plot] {path}")
-        if not created:
-            print(f"plot_results.py: no aggregate plots generated from {tables_root}")
+    ensure_dir(args.plots_root)
 
-    if args.solution_visualizations:
-        results = render_solution_visualizations(args)
-        error_count = sum(1 for result in results if result.status == "error")
-        if error_count:
-            print(f"plot_results.py: warning: {error_count} solution render errors; see manifest", file=sys.stderr)
+    plot_history_comparison(args.tables_root, args.plots_root, args.overwrite)
+    plot_instance_quality_heatmap(args.tables_root, args.plots_root, args.overwrite)
+
+    if not args.no_solution_visualizations:
+        render_solution_visualizations(
+            runs_root=args.runs_root,
+            plots_root=args.plots_root,
+            max_solution_customers=args.max_solution_customers,
+            overwrite=args.overwrite,
+        )
 
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())
