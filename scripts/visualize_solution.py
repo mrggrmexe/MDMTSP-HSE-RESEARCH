@@ -287,14 +287,48 @@ def build_node_lookup(instance: InstanceData) -> dict[int, NodeRecord]:
     return lookup
 
 
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def _resolve_candidate_path(path: Path, repo_root: Path) -> Path | None:
+    expanded = path.expanduser()
+    if expanded.exists():
+        return expanded.resolve()
+
+    parts = expanded.parts
+    if "instances" in parts:
+        idx = parts.index("instances")
+        candidate = repo_root.joinpath(*parts[idx:])
+        if candidate.exists():
+            return candidate.resolve()
+
+    basename = expanded.name
+    if basename:
+        matches = list((repo_root / "instances").rglob(basename))
+        if len(matches) == 1:
+            return matches[0].resolve()
+
+    return None
+
+
 def resolve_instance_path(run: RunData, override: Path | None) -> Path:
+    repo_root = _repo_root()
     if override is not None:
-        return override.expanduser().resolve()
+        resolved = _resolve_candidate_path(override, repo_root)
+        if resolved is None:
+            raise VisualizeSolutionError(f"file not found: {override}")
+        return resolved
     if run.instance_path is None:
         raise VisualizeSolutionError(
             "instance path is missing in the run JSON; pass --instance explicitly"
         )
-    return run.instance_path.expanduser().resolve()
+    resolved = _resolve_candidate_path(run.instance_path, repo_root)
+    if resolved is None:
+        raise VisualizeSolutionError(
+            f"file not found: {run.instance_path}"
+        )
+    return resolved
 
 
 def _estimate_marker_size(point_count: int, *, is_depot: bool) -> float:

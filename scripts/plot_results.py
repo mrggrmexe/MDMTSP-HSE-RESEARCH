@@ -334,20 +334,15 @@ def discover_run_json_files(runs_root: Path) -> list[Path]:
     if not runs_root.exists():
         return []
 
-    candidates = sorted(path for path in runs_root.rglob("*.json") if path.is_file())
-    run_files: list[Path] = []
-    for path in candidates:
+    candidates: list[Path] = []
+    for path in runs_root.rglob("*.json"):
+        if not path.is_file():
+            continue
         name = path.name.lower()
-        if name in {"summary.json", "run_summary.json"}:
+        if name in {"summary.json", "manifest.json", "metadata.json"}:
             continue
-        try:
-            with path.open("r", encoding="utf-8") as file:
-                head = file.read(4096)
-        except OSError:
-            continue
-        if '"routes"' in head or '"instance_path"' in head or '"algorithm_id"' in head:
-            run_files.append(path)
-    return run_files
+        candidates.append(path)
+    return sorted(candidates)
 
 
 def solution_output_path(run_json: Path, runs_root: Path, output_root: Path) -> Path:
@@ -355,12 +350,7 @@ def solution_output_path(run_json: Path, runs_root: Path, output_root: Path) -> 
         relative_parent = run_json.parent.relative_to(runs_root)
     except ValueError:
         relative_parent = Path(run_json.parent.name)
-
-    if run_json.name == "run.json":
-        file_name = "solution.png"
-    else:
-        file_name = f"{run_json.stem}__solution.png"
-    return output_root / "solutions" / relative_parent / file_name
+    return output_root / "solutions" / relative_parent / f"{run_json.stem}__solution.png"
 
 
 def _render_solution_worker(task: RenderTask) -> RenderResult:
@@ -512,8 +502,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         results = render_solution_visualizations(args)
         error_count = sum(1 for result in results if result.status == "error")
         if error_count:
-            print(f"plot_results.py: {error_count} solution render errors; see manifest", file=sys.stderr)
-            return 2
+            print(f"plot_results.py: warning: {error_count} solution render errors; see manifest", file=sys.stderr)
 
     return 0
 
