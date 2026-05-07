@@ -8,7 +8,6 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -78,7 +77,12 @@ class VisualizeSolutionScriptTests(unittest.TestCase):
             run_path = root / "run.json"
             output_path = root / "solution.png"
             run_path.write_text(
-                json.dumps({"algorithm_id": "algo", "routes": [[0, 1, 0]]}),
+                json.dumps(
+                    {
+                        "algorithm_id": "algo",
+                        "routes": [{"depot_id": 0, "nodes": [0, 1, 0]}],
+                    }
+                ),
                 encoding="utf-8",
             )
 

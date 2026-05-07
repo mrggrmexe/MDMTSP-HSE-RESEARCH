@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
-import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,8 +17,8 @@ SPEC = importlib.util.spec_from_file_location("check_instances", SCRIPT)
 MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC is not None
 assert SPEC.loader is not None
-SPEC.loader.exec_module(MODULE)
 sys.modules[SPEC.name] = MODULE
+SPEC.loader.exec_module(MODULE)
 
 
 class CheckInstancesTests(unittest.TestCase):
