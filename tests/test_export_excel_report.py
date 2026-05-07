@@ -9,16 +9,19 @@ import unittest
 from pathlib import Path
 
 from openpyxl import load_workbook
+import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "export_excel_report.py"
 
 SPEC = importlib.util.spec_from_file_location("export_excel_report", SCRIPT)
+MODULE = importlib.util.module_from_spec(SPEC)
 report = importlib.util.module_from_spec(SPEC)
 assert SPEC is not None
 assert SPEC.loader is not None
 SPEC.loader.exec_module(report)
+sys.modules[SPEC.name] = MODULE
 
 
 class ExportExcelReportTests(unittest.TestCase):
