@@ -1,0 +1,8 @@
+# Core Python dependencies for the MDMTSP research tooling.
+# This file is intentionally minimal and reflects the scripts currently used
+# for aggregation, plotting, Excel reporting, and instance/result validation.
+
+matplotlib>=3.8,<4
+numpy>=1.26,<3
+openpyxl>=3.1,<4
+pandas>=2.2,<3
