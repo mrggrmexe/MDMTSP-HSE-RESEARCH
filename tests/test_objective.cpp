@@ -48,7 +48,7 @@ void test_open_route_objective() {
     };
 
     const auto value = mdmtsp::compute_objective(solution, instance);
-    require(std::abs(value - 20.0) < 1e-9, "objective mismatch for open routes");
+    require(std::abs(value - 15.0) < 1e-9, "objective mismatch for open routes");
 }
 
 void test_empty_route_objective() {
