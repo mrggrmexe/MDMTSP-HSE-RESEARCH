@@ -333,7 +333,21 @@ def generate_aggregate_plots(tables_root: Path, output_root: Path) -> list[Path]
 def discover_run_json_files(runs_root: Path) -> list[Path]:
     if not runs_root.exists():
         return []
-    return sorted(path for path in runs_root.rglob("run.json") if path.is_file())
+
+    candidates = sorted(path for path in runs_root.rglob("*.json") if path.is_file())
+    run_files: list[Path] = []
+    for path in candidates:
+        name = path.name.lower()
+        if name in {"summary.json", "run_summary.json"}:
+            continue
+        try:
+            with path.open("r", encoding="utf-8") as file:
+                head = file.read(4096)
+        except OSError:
+            continue
+        if '"routes"' in head or '"instance_path"' in head or '"algorithm_id"' in head:
+            run_files.append(path)
+    return run_files
 
 
 def solution_output_path(run_json: Path, runs_root: Path, output_root: Path) -> Path:
@@ -341,7 +355,12 @@ def solution_output_path(run_json: Path, runs_root: Path, output_root: Path) -> 
         relative_parent = run_json.parent.relative_to(runs_root)
     except ValueError:
         relative_parent = Path(run_json.parent.name)
-    return output_root / "solutions" / relative_parent / "solution.png"
+
+    if run_json.name == "run.json":
+        file_name = "solution.png"
+    else:
+        file_name = f"{run_json.stem}__solution.png"
+    return output_root / "solutions" / relative_parent / file_name
 
 
 def _render_solution_worker(task: RenderTask) -> RenderResult:
@@ -443,7 +462,7 @@ def render_solution_visualizations(args: argparse.Namespace) -> list[RenderResul
 
     if not tasks:
         manifest = write_solution_manifest([], output_root)
-        print(f"plot_results.py: no run.json files found under {runs_root}")
+        print(f"plot_results.py: no solution JSON files found under {runs_root}")
         print(f"plot_results.py: wrote {manifest}")
         return []
 
