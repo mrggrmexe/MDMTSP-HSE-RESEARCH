@@ -48,9 +48,9 @@ def parse_args() -> argparse.Namespace:
         help="Render route visualizations only for runs with customer_count <= this value.",
     )
     parser.add_argument(
-        "--overwrite",
+        "--no-overwrite",
         action="store_true",
-        help="Overwrite existing plot files.",
+        help="Do not overwrite existing plot files.",
     )
     return parser.parse_args()
 
@@ -145,14 +145,8 @@ def plot_history_comparison(tables_root: Path, plots_root: Path, overwrite: bool
     ax2.set_ylabel("median wall time, ms", fontsize=11)
 
     fig.subplots_adjust(left=0.10, right=0.90, top=0.88, bottom=0.22)
-    fig.savefig(dst, dpi=200, bbox_inches="tight", facecolor="white")
+    fig.savefig(dst, dpi=220, bbox_inches="tight", facecolor="white")
     plt.close(fig)
-
-
-def compute_heatmap_height(n_rows: int) -> float:
-    base_height = 4.0
-    row_height = 1.10
-    return max(6.0, base_height + row_height * max(n_rows, 1))
 
 
 def plot_instance_quality_heatmap(tables_root: Path, plots_root: Path, overwrite: bool) -> None:
@@ -202,31 +196,57 @@ def plot_instance_quality_heatmap(tables_root: Path, plots_root: Path, overwrite
             columns=instance_col,
             values=gap_col,
             aggfunc="median",
-        ).sort_index()
+        )
+        .sort_index()
+        .sort_index(axis=1)
     )
 
     if pivot.empty:
         print("plot_results.py: skipped heatmap (pivot is empty)", file=sys.stderr)
         return
 
-    fig_height = compute_heatmap_height(pivot.shape[0])
+    n_rows, n_cols = pivot.shape
 
-    fig, ax = plt.subplots(figsize=(16.0, fig_height))
-    im = ax.imshow(pivot.values, aspect="auto", cmap="viridis")
+    fig_width = max(14.0, min(80.0, 0.55 * n_cols + 6.0))
+    fig_height = max(6.0, min(40.0, 0.90 * n_rows + 4.0))
 
-    ax.set_title("Instance-level quality heatmap", fontsize=16, pad=10)
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+    im = ax.imshow(pivot.values, aspect="auto", interpolation="nearest", cmap="viridis")
 
-    ax.set_xticks(np.arange(pivot.shape[1]))
-    ax.set_xticklabels(pivot.columns, rotation=75, ha="right", fontsize=9)
+    ax.set_title("Instance-level quality heatmap", fontsize=16, pad=12)
 
-    ax.set_yticks(np.arange(pivot.shape[0]))
-    ax.set_yticklabels(pivot.index, fontsize=11)
+    ax.set_yticks(np.arange(n_rows))
+    ax.set_yticklabels(pivot.index, fontsize=10)
 
-    cbar = fig.colorbar(im, ax=ax)
-    cbar.set_label("median gap, %", fontsize=12)
+    if n_cols <= 60:
+        step = 1
+    elif n_cols <= 120:
+        step = 2
+    elif n_cols <= 240:
+        step = 4
+    else:
+        step = max(1, n_cols // 60)
 
-    fig.subplots_adjust(left=0.18, right=0.93, top=0.90, bottom=0.35)
-    fig.savefig(dst, dpi=200, bbox_inches="tight", facecolor="white")
+    xticks = np.arange(0, n_cols, step)
+    ax.set_xticks(xticks)
+    ax.set_xticklabels(
+        [str(pivot.columns[i]) for i in xticks],
+        rotation=75,
+        ha="right",
+        fontsize=8,
+    )
+
+    ax.set_xlabel("instance", fontsize=11)
+    ax.set_ylabel("algorithm", fontsize=11)
+
+    cbar = fig.colorbar(im, ax=ax, fraction=0.025, pad=0.02)
+    cbar.set_label("gap to best observed, %", fontsize=11)
+
+    ax.tick_params(axis="x", pad=2)
+    ax.tick_params(axis="y", pad=2)
+
+    fig.tight_layout()
+    fig.savefig(dst, dpi=220, bbox_inches="tight", facecolor="white")
     plt.close(fig)
 
 
@@ -365,18 +385,19 @@ def render_solution_visualizations(
 
 def main() -> int:
     args = parse_args()
+    overwrite = not args.no_overwrite
 
     ensure_dir(args.plots_root)
 
-    plot_history_comparison(args.tables_root, args.plots_root, args.overwrite)
-    plot_instance_quality_heatmap(args.tables_root, args.plots_root, args.overwrite)
+    plot_history_comparison(args.tables_root, args.plots_root, overwrite)
+    plot_instance_quality_heatmap(args.tables_root, args.plots_root, overwrite)
 
     if not args.no_solution_visualizations:
         render_solution_visualizations(
             runs_root=args.runs_root,
             plots_root=args.plots_root,
             max_solution_customers=args.max_solution_customers,
-            overwrite=args.overwrite,
+            overwrite=overwrite,
         )
 
     return 0
