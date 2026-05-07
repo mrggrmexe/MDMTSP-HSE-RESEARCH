@@ -1,0 +1,400 @@
+MDMTSP TERMINAL COMMANDS
+========================
+
+Переход в корень репозитория
+
+cd /Users/mrggrm/Documents/GitHub/MDMTSP-HSE-RESEARCH
+
+
+Создание виртуального окружения Python
+
+python3 -m venv .venv
+
+
+Активация виртуального окружения
+
+source .venv/bin/activate
+
+
+Установка Python-зависимостей
+
+python -m pip install -r requirements.txt
+
+
+Выдача прав на shell-скрипты
+
+chmod +x scripts/rebuild_macos.sh
+chmod +x scripts/ci_sanity.sh
+
+
+Быстрая инкрементальная сборка на macOS
+
+./scripts/rebuild_macos.sh
+
+
+Чистая пересборка на macOS
+
+./scripts/rebuild_macos.sh --fresh
+
+
+Чистая пересборка и запуск C++ тестов
+
+./scripts/rebuild_macos.sh --fresh --tests
+
+
+Debug-сборка
+
+./scripts/rebuild_macos.sh --build-type Debug
+
+
+Сборка только target mdmtsp
+
+./scripts/rebuild_macos.sh --target mdmtsp
+
+
+Ручная конфигурация CMake
+
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+
+Ручная сборка CMake
+
+cmake --build build -j
+
+
+Запуск всех C++ тестов через CTest
+
+ctest --test-dir build --output-on-failure
+
+
+Запуск одного C++ теста через CTest
+
+ctest --test-dir build --output-on-failure -R test_objective
+
+
+Запуск всех Python тестов
+
+python -m unittest discover -s tests -p "test_*.py"
+
+
+Запуск одного Python тестового файла
+
+python tests/test_check_instances.py
+
+
+Полный repository sanity-check
+
+bash scripts/ci_sanity.sh
+
+
+Проверка JSON-конфигов в configs/
+
+find configs -name "*.json" -print0 | while IFS= read -r -d '' f; do python -m json.tool "$f" > /dev/null || exit 1; done
+
+
+Проверка JSON-инстансов в instances/
+
+find instances -name "*.json" -print0 | while IFS= read -r -d '' f; do python -m json.tool "$f" > /dev/null || exit 1; done
+
+
+Генерация исследовательского набора инстансов
+
+python scripts/generate_research_instances.py
+
+
+Просмотр справки генератора инстансов
+
+python scripts/generate_research_instances.py --help
+
+
+Валидация всех research-инстансов
+
+python scripts/check_instances.py instances/research
+
+
+Валидация всех инстансов с отчётами CSV и JSONL
+
+python scripts/check_instances.py instances --report-csv results/reports/instance_check.csv --report-jsonl results/reports/instance_check.jsonl
+
+
+Жёсткая валидация инстансов с падением и на warnings
+
+python scripts/check_instances.py instances/research --fail-on-warning
+
+
+Создание нового алгоритма через Python-скрипт
+
+python scripts/add_algorithm.py cheapest_insertion
+
+
+Создание нового алгоритма с принудительной перезаписью шаблона
+
+python scripts/add_algorithm.py cheapest_insertion --force
+
+
+Просмотр справки скрипта добавления алгоритма
+
+python scripts/add_algorithm.py --help
+
+
+Запуск основного рабочего suite до 25000 клиентов
+
+python scripts/run_suite.py --config configs/suites/research_until_25000.json --executable build/bin/mdmtsp
+
+
+Запуск полного research suite
+
+python scripts/run_suite.py --config configs/suites/research_all.json --executable build/bin/mdmtsp
+
+
+Запуск suite только для одной группы
+
+python scripts/run_suite.py --config configs/suites/research_group_03.json --executable build/bin/mdmtsp
+
+
+Запуск suite только с одним алгоритмом поверх конфига
+
+python scripts/run_suite.py --config configs/suites/research_group_03.json --executable build/bin/mdmtsp --algorithms nearest_neighbour
+
+
+Запуск suite с несколькими алгоритмами поверх конфига
+
+python scripts/run_suite.py --config configs/suites/research_all.json --executable build/bin/mdmtsp --algorithms nearest_neighbour random_insertion
+
+
+Просмотр справки основного suite-runner
+
+python scripts/run_suite.py --help
+
+
+Ручной запуск исполняемого файла solver-а
+
+./build/bin/mdmtsp --help
+
+
+Агрегация всех результатов из results/runs
+
+python scripts/aggregate_results.py --search-root results/runs
+
+
+Агрегация результатов из нескольких корней
+
+python scripts/aggregate_results.py --search-root results/runs --search-root archived_runs
+
+
+Просмотр справки агрегатора
+
+python scripts/aggregate_results.py --help
+
+
+Построение всех графиков и route-визуализаций по умолчанию
+
+python scripts/plot_results.py
+
+
+Построение только aggregate plots без route-визуализации решений
+
+python scripts/plot_results.py --no-solution-visualizations
+
+
+Построение графиков с ограничением на инстансы до 10000 клиентов для solution plots
+
+python scripts/plot_results.py --max-solution-customers 10000
+
+
+Перерисовка уже существующих route-визуализаций
+
+python scripts/plot_results.py --overwrite
+
+
+Просмотр справки plot_results.py
+
+python scripts/plot_results.py --help
+
+
+Экспорт Excel-отчёта по runs и logs
+
+python scripts/export_excel_report.py --runs-root results/runs --logs-root results/logs --output results/reports/research_report.xlsx
+
+
+Просмотр справки Excel-export скрипта
+
+python scripts/export_excel_report.py --help
+
+
+Отрисовка одного решения из run JSON
+
+python scripts/visualize_solution.py results/runs/<suite>/<algorithm>/<group>/<instance>/<run_file>.json
+
+
+Отрисовка одного решения с явным output PNG
+
+python scripts/visualize_solution.py results/runs/<suite>/<algorithm>/<group>/<instance>/<run_file>.json --output results/plots/solution_view.png
+
+
+Отрисовка одного решения с явным указанием instance JSON
+
+python scripts/visualize_solution.py results/runs/<suite>/<algorithm>/<group>/<instance>/<run_file>.json --instance instances/research/group_03/<instance>.json --output results/plots/solution_view.png
+
+
+Отрисовка решения с подписями депо
+
+python scripts/visualize_solution.py results/runs/<suite>/<algorithm>/<group>/<instance>/<run_file>.json --annotate-depots --output results/plots/solution_view.png
+
+
+Просмотр справки visualize_solution.py
+
+python scripts/visualize_solution.py --help
+
+
+Поиск всех run JSON в results/
+
+find results/runs -name "*.json"
+
+
+Поиск всех логов в results/
+
+find results/logs -name "*.log"
+
+
+Подсчёт количества run JSON
+
+find results/runs -name "*.json" | wc -l
+
+
+Подсчёт количества логов
+
+find results/logs -name "*.log" | wc -l
+
+
+Просмотр последних run JSON файлов
+
+find results/runs -name "*.json" | tail
+
+
+Просмотр последних логов
+
+find results/logs -name "*.log" | tail
+
+
+Просмотр всех PNG-графиков
+
+find results/plots -name "*.png" | sort
+
+
+Открыть каталог с графиками на macOS
+
+open results/plots
+
+
+Открыть Excel-отчёт на macOS
+
+open results/reports/research_report.xlsx
+
+
+Открыть конкретный PNG на macOS
+
+open results/plots/history_comparison.png
+
+
+Проверить наличие solution render manifest
+
+ls -l results/plots/solutions/solution_render_manifest.csv
+
+
+Показать дерево results/
+
+tree results
+
+
+Показать дерево instances/research/
+
+tree instances/research
+
+
+Показать дерево configs/suites/
+
+tree configs/suites
+
+
+Быстрый просмотр списка suite-конфигов
+
+find configs/suites -name "*.json" | sort
+
+
+Проверка всех shell-скриптов на синтаксис
+
+find scripts -name "*.sh" -print0 | while IFS= read -r -d '' f; do bash -n "$f" || exit 1; done
+
+
+Компиляция всех Python-скриптов без запуска
+
+python -m compileall scripts tests
+
+
+Удаление только производных артефактов аналитики и графиков
+
+rm -rf results/history results/tables results/plots results/reports
+
+
+Полный пересчёт аналитики и отчётности из существующих runs/logs
+
+rm -rf results/history results/tables results/plots results/reports
+python scripts/aggregate_results.py --search-root results/runs
+python scripts/plot_results.py
+python scripts/export_excel_report.py --runs-root results/runs --logs-root results/logs --output results/reports/research_report.xlsx
+
+
+Полная очистка build-каталога
+
+rm -rf build
+
+
+Полная очистка только сырых результатов прогонов
+
+rm -rf results/runs results/logs
+
+
+Полная очистка всех результатов
+
+rm -rf results/history results/logs results/plots results/reports results/runs results/run_summaries results/tables
+
+
+Проверка статуса git
+
+git status
+
+
+Создание новой ветки для разработки алгоритма
+
+git checkout -b feature/new-algorithm
+
+
+Добавление изменений в индекс git
+
+git add .
+
+
+Коммит изменений
+
+git commit -m "Add new algorithm and pipeline updates"
+
+
+Просмотр истории коммитов кратко
+
+git log --oneline --decorate --graph -20
+
+
+Запуск GitHub Actions CI локально по sanity-скрипту
+
+bash scripts/ci_sanity.sh
+
+
+Проверка, что requirements.txt и pyproject.toml лежат в корне
+
+ls -l requirements.txt pyproject.toml
+
+
+Проверка, что README по основным каталогам лежат на местах
+
+ls -l scripts/README.md configs/README.md instances/README.md results/README.md src/README.md tests/README.md
