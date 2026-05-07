@@ -7,7 +7,7 @@ import re
 import statistics
 import sys
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from pathlib import Path, PurePosixPath
 from tempfile import NamedTemporaryFile
 from typing import Any, Iterable, Iterator, Sequence
@@ -982,7 +982,7 @@ def build_export_bundle(
     baseline_matrix = build_baseline_matrix(run_rows, [row["algorithm_id"] for row in run_rows], context)
     failures = build_failures(run_rows)
     logs = [record.as_row() for _, record in sorted(log_records.items())]
-    parse_issues = [issue.__dict__ for issue in (*run_issues, *log_issues)]
+    parse_issues = [asdict(issue) for issue in (*run_issues, *log_issues)]
 
     return ExportBundle(
         runs=run_rows,
