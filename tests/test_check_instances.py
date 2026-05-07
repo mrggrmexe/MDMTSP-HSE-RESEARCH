@@ -42,10 +42,11 @@ class CheckInstancesTests(unittest.TestCase):
             )
 
             result = MODULE.validate_instance_file(path)
-            self.assertEqual(result.error_count, 0)
+            self.assertEqual(result.status, "ok")
+            self.assertEqual(len(result.errors), 0)
             self.assertEqual(result.customer_count, 2)
             self.assertEqual(result.depot_count, 1)
-            self.assertEqual(result.salesman_count, 1)
+            self.assertEqual(result.salesmen_count, 1)
 
     def test_duplicate_ids_are_errors(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -62,8 +63,9 @@ class CheckInstancesTests(unittest.TestCase):
             )
 
             result = MODULE.validate_instance_file(path)
-            self.assertGreater(result.error_count, 0)
-            self.assertTrue(any("duplicate" in issue.message.lower() for issue in result.issues))
+            self.assertEqual(result.status, "error")
+            self.assertGreater(len(result.errors), 0)
+            self.assertTrue(any("duplicate" in message.lower() for message in result.errors))
 
     def test_valid_legacy_instance(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -82,10 +84,11 @@ class CheckInstancesTests(unittest.TestCase):
             )
 
             result = MODULE.validate_instance_file(path)
-            self.assertEqual(result.error_count, 0)
+            self.assertEqual(result.status, "ok")
+            self.assertEqual(len(result.errors), 0)
             self.assertEqual(result.customer_count, 2)
             self.assertEqual(result.depot_count, 1)
-            self.assertEqual(result.salesman_count, 1)
+            self.assertEqual(result.salesmen_count, 1)
 
 
 if __name__ == "__main__":

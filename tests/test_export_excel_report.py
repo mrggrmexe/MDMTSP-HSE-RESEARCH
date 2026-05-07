@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import importlib.util
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -14,13 +14,6 @@ from openpyxl import load_workbook
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "export_excel_report.py"
-
-SPEC = importlib.util.spec_from_file_location("export_excel_report", SCRIPT)
-report = importlib.util.module_from_spec(SPEC)
-assert SPEC is not None
-assert SPEC.loader is not None
-sys.modules[SPEC.name] = report
-SPEC.loader.exec_module(report)
 
 
 class ExportExcelReportTests(unittest.TestCase):
@@ -56,18 +49,26 @@ class ExportExcelReportTests(unittest.TestCase):
             )
 
             output = root / "report.xlsx"
-            code = report.main(
+            result = subprocess.run(
                 [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--repo-root",
+                    str(root),
                     "--runs-root",
                     str(root / "results" / "runs"),
                     "--logs-root",
                     str(logs_root),
                     "--output",
                     str(output),
-                ]
+                ],
+                cwd=str(ROOT),
+                text=True,
+                capture_output=True,
+                check=False,
             )
 
-            self.assertEqual(code, 0)
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
             self.assertTrue(output.exists())
 
             wb = load_workbook(output, read_only=True)
@@ -85,18 +86,26 @@ class ExportExcelReportTests(unittest.TestCase):
             (runs_root / "broken.json").write_text("{not json", encoding="utf-8")
 
             output = root / "report.xlsx"
-            code = report.main(
+            result = subprocess.run(
                 [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--repo-root",
+                    str(root),
                     "--runs-root",
                     str(runs_root),
                     "--logs-root",
                     str(logs_root),
                     "--output",
                     str(output),
-                ]
+                ],
+                cwd=str(ROOT),
+                text=True,
+                capture_output=True,
+                check=False,
             )
 
-            self.assertEqual(code, 0)
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
             wb = load_workbook(output, read_only=True)
             self.assertIn("Parse_Issues", wb.sheetnames)
             ws = wb["Parse_Issues"]
