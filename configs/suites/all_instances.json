@@ -14,6 +14,7 @@
   "improve_iterations": 0,
   "algorithms": [
     "nearest_neighbour",
-    "cheapest_insertion"
+    "cheapest_insertion",
+    "nearest_neighbour_2opt"
   ]
 }

@@ -104,6 +104,10 @@ std::string canonical_algorithm_id(std::string_view value) {
         return "cheapest_insertion";
     }
 
+    if (value == "nearest_neighbour_2opt") {
+        return "nearest_neighbour_2opt";
+    }
+
     throw std::invalid_argument("unsupported algorithm: " + std::string(value));
 }
 
@@ -486,6 +490,10 @@ mdmtsp::MDMTSPSolution solve_with_algorithm(const std::string& algorithm_id,
 
     if (algorithm_id == "cheapest_insertion") {
         return mdmtsp::solve_mdmtsp_cheapest_insertion(instance, rng);
+    }
+
+    if (algorithm_id == "nearest_neighbour_2opt") {
+        return mdmtsp::solve_mdmtsp_nearest_neighbour_2opt(instance, rng);
     }
 
     throw std::invalid_argument("unsupported algorithm: " + algorithm_id);
