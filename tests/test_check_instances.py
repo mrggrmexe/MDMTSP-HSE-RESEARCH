@@ -29,7 +29,7 @@ class CheckInstancesTests(unittest.TestCase):
                 json.dumps(
                     {
                         "name": "g01_i01_c2_d1_m1_random",
-                        "type": "random",
+                        "type": "euclidean",
                         "seed": 42,
                         "depots": [{"id": 0, "x": 0.0, "y": 0.0, "salesmen": 1}],
                         "customers": [
@@ -43,10 +43,10 @@ class CheckInstancesTests(unittest.TestCase):
 
             result = MODULE.validate_instance_file(path)
             self.assertEqual(result.status, "ok")
-            self.assertEqual(len(result.errors), 0)
             self.assertEqual(result.customer_count, 2)
             self.assertEqual(result.depot_count, 1)
             self.assertEqual(result.salesmen_count, 1)
+            self.assertEqual(result.errors, [])
 
     def test_duplicate_ids_are_errors(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -64,7 +64,6 @@ class CheckInstancesTests(unittest.TestCase):
 
             result = MODULE.validate_instance_file(path)
             self.assertEqual(result.status, "error")
-            self.assertGreater(len(result.errors), 0)
             self.assertTrue(any("duplicate" in message.lower() for message in result.errors))
 
     def test_valid_legacy_instance(self) -> None:
@@ -74,8 +73,8 @@ class CheckInstancesTests(unittest.TestCase):
                 json.dumps(
                     {
                         "name": "legacy",
-                        "depots": [[0.0, 0.0]],
-                        "customers": [[1.0, 0.0], [2.0, 0.0]],
+                        "depots": [{"x": 0.0, "y": 0.0}],
+                        "customers": [{"x": 1.0, "y": 0.0}, {"x": 2.0, "y": 0.0}],
                         "salesman_count": 1,
                         "return_to_depot": True,
                     }
@@ -85,10 +84,10 @@ class CheckInstancesTests(unittest.TestCase):
 
             result = MODULE.validate_instance_file(path)
             self.assertEqual(result.status, "ok")
-            self.assertEqual(len(result.errors), 0)
             self.assertEqual(result.customer_count, 2)
             self.assertEqual(result.depot_count, 1)
             self.assertEqual(result.salesmen_count, 1)
+            self.assertEqual(result.errors, [])
 
 
 if __name__ == "__main__":

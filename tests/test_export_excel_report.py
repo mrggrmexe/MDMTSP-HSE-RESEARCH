@@ -53,8 +53,6 @@ class ExportExcelReportTests(unittest.TestCase):
                 [
                     sys.executable,
                     str(SCRIPT),
-                    "--repo-root",
-                    str(root),
                     "--runs-root",
                     str(root / "results" / "runs"),
                     "--logs-root",
@@ -90,8 +88,6 @@ class ExportExcelReportTests(unittest.TestCase):
                 [
                     sys.executable,
                     str(SCRIPT),
-                    "--repo-root",
-                    str(root),
                     "--runs-root",
                     str(runs_root),
                     "--logs-root",
