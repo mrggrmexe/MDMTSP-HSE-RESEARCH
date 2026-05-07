@@ -4,7 +4,9 @@
   "algorithms": [
     "nearest_neighbour",
     "random_insertion",
-    "cheapest_insertion"
+    "cheapest_insertion",
+    "nearest_neighbour_2opt",
+    "nearest_neighbour_2opt_v2"
   ],
   "instance_roots": [
     "instances/research"

@@ -78,6 +78,8 @@ add_library(mdmtsp_core STATIC
     src/mdmtsp/instance_io.cpp
     src/mdmtsp/interroute_local_search.cpp
     src/mdmtsp/nearest_neighbour.cpp
+    src/mdmtsp/nearest_neighbour_2opt.cpp
+    src/mdmtsp/nearest_neighbour_2opt_v2.cpp
     src/mdmtsp/objective.cpp
     src/mdmtsp/random_insertion.cpp
     src/mdmtsp/solution.cpp
