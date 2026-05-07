@@ -15,6 +15,7 @@
   "algorithms": [
     "nearest_neighbour",
     "cheapest_insertion",
-    "nearest_neighbour_2opt"
+    "nearest_neighbour_2opt",
+    "nearest_neighbour_2opt_v2"
   ]
 }

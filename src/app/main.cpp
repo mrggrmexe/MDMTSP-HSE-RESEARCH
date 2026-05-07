@@ -108,6 +108,10 @@ std::string canonical_algorithm_id(std::string_view value) {
         return "nearest_neighbour_2opt";
     }
 
+    if (value == "nearest_neighbour_2opt_v2") {
+        return "nearest_neighbour_2opt_v2";
+    }
+
     throw std::invalid_argument("unsupported algorithm: " + std::string(value));
 }
 
@@ -494,6 +498,10 @@ mdmtsp::MDMTSPSolution solve_with_algorithm(const std::string& algorithm_id,
 
     if (algorithm_id == "nearest_neighbour_2opt") {
         return mdmtsp::solve_mdmtsp_nearest_neighbour_2opt(instance, rng);
+    }
+
+    if (algorithm_id == "nearest_neighbour_2opt_v2") {
+        return mdmtsp::solve_mdmtsp_nearest_neighbour_2opt_v2(instance, rng);
     }
 
     throw std::invalid_argument("unsupported algorithm: " + algorithm_id);
