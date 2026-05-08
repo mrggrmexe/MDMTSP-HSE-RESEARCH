@@ -69,4 +69,9 @@ public:
     Random& rng
 );
 
+[[nodiscard]] MDMTSPSolution solve_mdmtsp_lkh_mdmtsp_v3(
+    const MDMTSPInstance& instance,
+    Random& rng
+);
+
 }  // namespace mdmtsp
