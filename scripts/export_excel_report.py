@@ -1489,11 +1489,16 @@ def main() -> int:
         "results/tables/algorithm_instance_summary.csv"
     )
 
+    algorithm_instance_summary_csv = Path("results/tables/algorithm_instance_summary.csv")
+    instance_summary_csv = Path("results/tables/instance_summary.csv")
+
     if algorithm_instance_summary_csv.exists():
         add_heatmap_sheets_to_workbook(
             workbook_path=output_path,
             algorithm_instance_summary_csv=algorithm_instance_summary_csv,
+            instance_summary_csv=instance_summary_csv if instance_summary_csv.exists() else None,
         )
+
     print(f"excel report saved to {output_path}")
     print(
         f"runs={len(bundle.runs)} algorithms={len(bundle.algorithms)} instances={len(bundle.instances)} failures={len(bundle.failures)} parse_issues={len(bundle.parse_issues)}"

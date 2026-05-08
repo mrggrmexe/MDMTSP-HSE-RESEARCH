@@ -1,0 +1,13 @@
+# --- add near the other imports in export_excel_report.py ---
+from excel_heatmaps import add_heatmap_sheets_to_workbook
+
+# --- add near the end of main(), after workbook was already saved successfully ---
+algorithm_instance_summary_csv = Path("results/tables/algorithm_instance_summary.csv")
+instance_summary_csv = Path("results/tables/instance_summary.csv")
+
+if algorithm_instance_summary_csv.exists():
+    add_heatmap_sheets_to_workbook(
+        workbook_path=output_path,
+        algorithm_instance_summary_csv=algorithm_instance_summary_csv,
+        instance_summary_csv=instance_summary_csv if instance_summary_csv.exists() else None,
+    )
