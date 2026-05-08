@@ -4,7 +4,7 @@ set -Eeuo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ARTIFACTS_DIR="${CI_ARTIFACTS_DIR:-${ROOT_DIR}/.ci-artifacts}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
-CI_MAX_SOLUTION_CUSTOMERS="${CI_MAX_SOLUTION_CUSTOMERS:-500}"
+CI_MAX_SOLUTION_CUSTOMERS="${CI_MAX_SOLUTION_CUSTOMERS:-10}"
 CI_STRICT_ARTIFACTS="${CI_STRICT_ARTIFACTS:-0}"
 
 mkdir -p "${ARTIFACTS_DIR}"
@@ -30,13 +30,17 @@ run_optional_artifact_step() {
   local step_name="$1"
   shift
 
-  if "$@"; then
+  set +e
+  "$@"
+  local exit_code=$?
+  set -e
+
+  if [ "${exit_code}" -eq 0 ]; then
     return 0
   fi
 
-  local exit_code=$?
   if [ "${CI_STRICT_ARTIFACTS}" = "1" ]; then
-    log "${step_name} failed in strict mode"
+    log "${step_name} failed in strict mode with exit code ${exit_code}"
     return "${exit_code}"
   fi
 
@@ -60,15 +64,15 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-roots = [Path("configs")]
 validated = 0
-for root in roots:
-    if not root.exists():
-        continue
+root = Path("configs")
+
+if root.exists():
     for path in sorted(root.rglob("*.json")):
         with path.open("r", encoding="utf-8") as handle:
             json.load(handle)
         validated += 1
+
 print(f"validated {validated} JSON config file(s)")
 PY
 
@@ -94,7 +98,7 @@ else
   log "Instance validation skipped"
 fi
 
-if [ "${CI_SKIP_EXPORT_REPORT:-0}" != "1" ] && (has_json_files "${ROOT_DIR}/results/runs" || [ -d "${ROOT_DIR}/results/logs" ]); then
+if [ "${CI_SKIP_EXPORT_REPORT:-0}" != "1" ] && { has_json_files "${ROOT_DIR}/results/runs" || [ -d "${ROOT_DIR}/results/logs" ]; }; then
   log "Building Excel report from committed results"
   run_optional_artifact_step \
     "Excel export" \
@@ -113,8 +117,7 @@ if [ "${CI_SKIP_PLOT_RESULTS:-0}" != "1" ] && { [ -d "${ROOT_DIR}/results/tables
     "${PYTHON_BIN}" scripts/plot_results.py \
       --tables-root "${ROOT_DIR}/results/tables" \
       --runs-root "${ROOT_DIR}/results/runs" \
-      --output-root "${ARTIFACTS_DIR}/plots" \
-      --solution-workers "${CI_SOLUTION_WORKERS:-2}" \
+      --plots-root "${ARTIFACTS_DIR}/plots" \
       --max-solution-customers "${CI_MAX_SOLUTION_CUSTOMERS}"
 else
   log "Plot generation skipped"
