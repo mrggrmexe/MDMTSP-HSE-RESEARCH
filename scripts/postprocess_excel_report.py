@@ -22,7 +22,13 @@ def parse_args() -> argparse.Namespace:
         "--algorithm-instance-summary",
         type=Path,
         default=Path("results/tables/algorithm_instance_summary.csv"),
-        help="Path to algorithm_instance_summary.csv",
+        help="Path to algorithm_instance_summary.csv.",
+    )
+    parser.add_argument(
+        "--instance-summary",
+        type=Path,
+        default=Path("results/tables/instance_summary.csv"),
+        help="Path to instance_summary.csv. Used to include all known instances as heatmap columns.",
     )
     return parser.parse_args()
 
@@ -32,6 +38,7 @@ def main() -> int:
     add_heatmap_sheets_to_workbook(
         workbook_path=args.workbook,
         algorithm_instance_summary_csv=args.algorithm_instance_summary,
+        instance_summary_csv=args.instance_summary,
     )
     print(f"added Gap_Heatmap and Time_Heatmap to {args.workbook}")
     return 0

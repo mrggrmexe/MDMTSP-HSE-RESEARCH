@@ -6,7 +6,10 @@
     "random_insertion",
     "cheapest_insertion",
     "nearest_neighbour_2opt",
-    "nearest_neighbour_2opt_v2"
+    "nearest_neighbour_2opt_v2",
+    "cheapest_insertion_2opt",
+    "cheapest_insertion_vnd",
+    "cheapest_insertion_tabu"
   ],
   "instance_roots": [
     "instances/research"

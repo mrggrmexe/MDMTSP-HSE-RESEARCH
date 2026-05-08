@@ -6,12 +6,17 @@
     "random_insertion",
     "cheapest_insertion",
     "nearest_neighbour_2opt",
-    "nearest_neighbour_2opt_v2"
+    "nearest_neighbour_2opt_v2",
+    "cheapest_insertion_2opt",
+    "cheapest_insertion_vnd",
+    "cheapest_insertion_tabu"
   ],
   "instance_roots": [
     "instances/research/group_01",
     "instances/research/group_02",
     "instances/research/group_03",
+    "instances/research/group_03_hard",
+    "instances/research/group_03_traps",
     "instances/research/group_04",
     "instances/research/group_05",
     "instances/research/group_06",

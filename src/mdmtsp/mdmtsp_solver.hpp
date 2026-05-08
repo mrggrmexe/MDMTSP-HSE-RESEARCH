@@ -44,4 +44,19 @@ public:
     Random& rng
 );
 
+[[nodiscard]] MDMTSPSolution solve_mdmtsp_cheapest_insertion_2opt(
+    const MDMTSPInstance& instance,
+    Random& rng
+);
+
+[[nodiscard]] MDMTSPSolution solve_mdmtsp_cheapest_insertion_vnd(
+    const MDMTSPInstance& instance,
+    Random& rng
+);
+
+[[nodiscard]] MDMTSPSolution solve_mdmtsp_cheapest_insertion_tabu(
+    const MDMTSPInstance& instance,
+    Random& rng
+);
+
 }  // namespace mdmtsp
