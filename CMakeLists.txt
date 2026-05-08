@@ -83,6 +83,7 @@ add_library(mdmtsp_core STATIC
     src/mdmtsp/lkh_mdmtsp.cpp
     src/mdmtsp/lkh_mdmtsp_v2.cpp
     src/mdmtsp/lkh_mdmtsp_v3.cpp
+    src/mdmtsp/lkh_mdmtsp_v4_portfolio.cpp
     src/mdmtsp/nearest_neighbour.cpp
     src/mdmtsp/nearest_neighbour_2opt.cpp
     src/mdmtsp/nearest_neighbour_2opt_v2.cpp

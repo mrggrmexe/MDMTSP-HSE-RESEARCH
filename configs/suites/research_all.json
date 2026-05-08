@@ -12,7 +12,8 @@
     "cheapest_insertion_tabu",
     "lkh_mdmtsp",
     "lkh_mdmtsp_v2",
-    "lkh_mdmtsp_v3"
+    "lkh_mdmtsp_v3",
+    "lkh_mdmtsp_v4_portfolio"
   ],
   "instance_roots": [
     "instances/research"

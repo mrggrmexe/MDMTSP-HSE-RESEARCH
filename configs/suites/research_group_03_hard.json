@@ -6,7 +6,8 @@
     "nearest_neighbour_2opt_v2",
     "lkh_mdmtsp",
     "lkh_mdmtsp_v2",
-    "lkh_mdmtsp_v3"
+    "lkh_mdmtsp_v3",
+    "lkh_mdmtsp_v4_portfolio"
   ],
   "instance_roots": [
     "instances/research/group_03_hard"
