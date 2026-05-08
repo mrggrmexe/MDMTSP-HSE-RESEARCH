@@ -1,0 +1,73 @@
+{
+  "algorithm": {
+    "id": "cheapest_insertion_2opt",
+    "parameters": {
+      "improve_iterations": 0
+    }
+  },
+  "algorithm_id": "cheapest_insertion_2opt",
+  "customer_count": 10,
+  "depot_count": 1,
+  "execution": {
+    "seed": 42,
+    "timestamp_utc": "2026-05-08T01:05:59Z",
+    "wall_time_ms": 0.009,
+    "wall_time_s": 9e-06,
+    "wall_time_us": 9
+  },
+  "feasible": true,
+  "improve_iterations": 0,
+  "instance": {
+    "customer_count": 10,
+    "depot_count": 1,
+    "name": "group_01_instance_10_customers_10_depots_1_salesmen_1_random",
+    "path": "/Users/mrggrm/Documents/GitHub/MDMTSP-HSE-RESEARCH/instances/research/group_01/g01_i10_c10_d1_m1_random.json",
+    "return_to_depot": true,
+    "salesman_count": 1
+  },
+  "instance_name": "group_01_instance_10_customers_10_depots_1_salesmen_1_random",
+  "instance_path": "/Users/mrggrm/Documents/GitHub/MDMTSP-HSE-RESEARCH/instances/research/group_01/g01_i10_c10_d1_m1_random.json",
+  "objective": 2346.775519352508,
+  "result": {
+    "feasible": true,
+    "objective": 2346.775519352508,
+    "route_count": 1,
+    "status": "ok"
+  },
+  "return_to_depot": true,
+  "route_count": 1,
+  "routes": [
+    {
+      "depot_id": 0,
+      "nodes": [
+        0,
+        1,
+        9,
+        5,
+        3,
+        2,
+        7,
+        8,
+        10,
+        4,
+        6,
+        0
+      ],
+      "salesman_id": 0
+    }
+  ],
+  "run_id": "20260508T010559Z__research_until_25000__cheapest_insertion_2opt__g01_i10_c10_d1_m1_random__seed_42__0c82759f250a",
+  "salesman_count": 1,
+  "schema_version": 2,
+  "seed": 42,
+  "source": {
+    "instance_path": "/Users/mrggrm/Documents/GitHub/MDMTSP-HSE-RESEARCH/instances/research/group_01/g01_i10_c10_d1_m1_random.json",
+    "mode": "instance_file"
+  },
+  "status": "ok",
+  "suite_name": "research_until_25000",
+  "timestamp_utc": "2026-05-08T01:05:59Z",
+  "wall_time_ms": 0.009,
+  "wall_time_s": 9e-06,
+  "wall_time_us": 9
+}
