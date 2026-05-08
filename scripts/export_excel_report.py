@@ -55,6 +55,37 @@ WARNING_PATTERNS = (
     re.compile(r"\bdeprecated\b", re.IGNORECASE),
 )
 
+GROUP_PATTERN = re.compile(r"group_(\d+)(.*)")
+
+
+def natural_group_key(value: str) -> tuple[int, int, str]:
+    match = GROUP_PATTERN.search(value)
+    if not match:
+        return (10**9, 999, value)
+
+    number = int(match.group(1))
+    suffix = match.group(2)
+
+    suffix_priority = {
+        "": 0,
+        "_hard": 1,
+        "_traps": 2,
+    }
+
+    return (
+        number,
+        suffix_priority.get(suffix, 999),
+        suffix,
+    )
+
+
+def instance_sort_key(instance_name: str, customer_count: int | None) -> tuple[tuple[int, int, str], int, str]:
+    return (
+        natural_group_key(instance_name),
+        customer_count if customer_count is not None else -1,
+        instance_name,
+    )
+
 
 @dataclass(slots=True)
 class ParseIssue:
@@ -728,7 +759,13 @@ def summarize_instances(run_rows: Sequence[dict[str, Any]], context: SummaryCont
         grouped[str(row["instance_name"])].append(row)
 
     output: list[dict[str, Any]] = []
-    for instance_name, rows in sorted(grouped.items(), key=lambda item: (as_int(item[1][0].get("customer_count")) or -1, item[0])):
+    for instance_name, rows in sorted(
+        grouped.items(),
+        key=lambda item: instance_sort_key(
+            item[0],
+            as_int(item[1][0].get("customer_count")),
+        ),
+    ):
         objective_rows = [row for row in rows if row.get("objective") is not None and row.get("is_feasible_success")]
         runtime_rows = [row for row in rows if row.get("wall_time_ms") is not None and row.get("is_success")]
         best_objective = context.best_objective_by_instance.get(instance_name)
@@ -792,7 +829,16 @@ def summarize_algorithm_instance(run_rows: Sequence[dict[str, Any]], context: Su
         grouped[(str(row["algorithm_id"]), str(row["instance_name"]))].append(row)
 
     output: list[dict[str, Any]] = []
-    for (algorithm_id, instance_name), rows in sorted(grouped.items(), key=lambda item: ((as_int(item[1][0].get("customer_count")) or -1), item[0][1], item[0][0])):
+    for (algorithm_id, instance_name), rows in sorted(
+        grouped.items(),
+        key=lambda item: (
+            instance_sort_key(
+                item[0][1],
+                as_int(item[1][0].get("customer_count")),
+            ),
+            item[0][0],
+        ),
+    ):
         objective_rows = [row for row in rows if row.get("objective") is not None and row.get("is_feasible_success")]
         gaps = [as_float(row.get("gap_to_best_observed")) for row in objective_rows if as_float(row.get("gap_to_best_observed")) is not None]
         time_ratios = [as_float(row.get("time_ratio_to_fastest")) for row in rows if as_float(row.get("time_ratio_to_fastest")) is not None and row.get("is_success")]
@@ -1484,10 +1530,6 @@ def main() -> int:
     )
 
     write_workbook(bundle, output_path, repo_root)
-
-    algorithm_instance_summary_csv = Path(
-        "results/tables/algorithm_instance_summary.csv"
-    )
 
     algorithm_instance_summary_csv = Path("results/tables/algorithm_instance_summary.csv")
     instance_summary_csv = Path("results/tables/instance_summary.csv")
