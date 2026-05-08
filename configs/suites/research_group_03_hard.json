@@ -2,8 +2,8 @@
   "suite_name": "research_group_03_hard",
   "description": "Hard adversarial group 03 instances",
   "algorithms": [
-    "nearest_neighbout_2opt",
-    "nearest_neighbout_2opt_v2"
+    "nearest_neighbour_2opt",
+    "nearest_neighbour_2opt_v2"
   ],
   "instance_roots": [
     "instances/research/group_03_hard"
