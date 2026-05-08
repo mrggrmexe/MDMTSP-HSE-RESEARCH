@@ -11,7 +11,6 @@ from dataclasses import dataclass, asdict
 from pathlib import Path, PurePosixPath
 from tempfile import NamedTemporaryFile
 from typing import Any, Iterable, Iterator, Sequence
-from excel_heatmaps import add_heatmap_sheets_to_workbook
 
 try:
     from openpyxl import Workbook
@@ -1570,15 +1569,23 @@ def main() -> int:
 
     write_workbook(bundle, output_path, repo_root)
 
-    algorithm_instance_summary_csv = Path("results/tables/algorithm_instance_summary.csv")
-    instance_summary_csv = Path("results/tables/instance_summary.csv")
+    algorithm_instance_summary_csv = repo_root / "results" / "tables" / "algorithm_instance_summary.csv"
+    instance_summary_csv = repo_root / "results" / "tables" / "instance_summary.csv"
 
     if algorithm_instance_summary_csv.exists():
-        add_heatmap_sheets_to_workbook(
-            workbook_path=output_path,
-            algorithm_instance_summary_csv=algorithm_instance_summary_csv,
-            instance_summary_csv=instance_summary_csv if instance_summary_csv.exists() else None,
-        )
+        try:
+            from excel_heatmaps import add_heatmap_sheets_to_workbook
+        except ImportError as exc:
+            print(
+                f"warning: heatmap sheets skipped because optional dependency is missing: {exc}",
+                file=sys.stderr,
+            )
+        else:
+            add_heatmap_sheets_to_workbook(
+                workbook_path=output_path,
+                algorithm_instance_summary_csv=algorithm_instance_summary_csv,
+                instance_summary_csv=instance_summary_csv if instance_summary_csv.exists() else None,
+            )
 
     print(f"excel report saved to {output_path}")
     print(
