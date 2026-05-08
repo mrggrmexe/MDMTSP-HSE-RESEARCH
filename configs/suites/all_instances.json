@@ -20,6 +20,7 @@
     "cheapest_insertion_2opt",
     "cheapest_insertion_vnd",
     "cheapest_insertion_tabu",
-    "lkh_mdmtsp"
+    "lkh_mdmtsp",
+    "lkh_mdmtsp_v2"
   ]
 }

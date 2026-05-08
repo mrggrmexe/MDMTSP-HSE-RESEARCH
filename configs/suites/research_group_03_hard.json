@@ -4,7 +4,8 @@
   "algorithms": [
     "nearest_neighbour_2opt",
     "nearest_neighbour_2opt_v2",
-    "lkh_mdmtsp"
+    "lkh_mdmtsp",
+    "lkh_mdmtsp_v2"
   ],
   "instance_roots": [
     "instances/research/group_03_hard"

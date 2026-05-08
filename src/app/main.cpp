@@ -128,6 +128,10 @@ std::string canonical_algorithm_id(std::string_view value) {
         return "lkh_mdmtsp";
     }
 
+    if (value == "lkh_mdmtsp_v2") {
+        return "lkh_mdmtsp_v2";
+    }
+
     throw std::invalid_argument("unsupported algorithm: " + std::string(value));
 }
 
@@ -534,6 +538,10 @@ mdmtsp::MDMTSPSolution solve_with_algorithm(const std::string& algorithm_id,
 
     if (algorithm_id == "lkh_mdmtsp") {
         return mdmtsp::solve_mdmtsp_lkh_mdmtsp(instance, rng);
+    }
+
+    if (algorithm_id == "lkh_mdmtsp_v2") {
+        return mdmtsp::solve_mdmtsp_lkh_mdmtsp_v2(instance, rng);
     }
 
     throw std::invalid_argument("unsupported algorithm: " + algorithm_id);
