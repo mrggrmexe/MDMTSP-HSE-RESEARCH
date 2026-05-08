@@ -1484,11 +1484,16 @@ def main() -> int:
     )
 
     write_workbook(bundle, output_path, repo_root)
-    if algorithm_instance_summary_csv.exists():
-    add_heatmap_sheets_to_workbook(
-        workbook_path=output_path,
-        algorithm_instance_summary_csv=algorithm_instance_summary_csv,
+
+    algorithm_instance_summary_csv = Path(
+        "results/tables/algorithm_instance_summary.csv"
     )
+
+    if algorithm_instance_summary_csv.exists():
+        add_heatmap_sheets_to_workbook(
+            workbook_path=output_path,
+            algorithm_instance_summary_csv=algorithm_instance_summary_csv,
+        )
     print(f"excel report saved to {output_path}")
     print(
         f"runs={len(bundle.runs)} algorithms={len(bundle.algorithms)} instances={len(bundle.instances)} failures={len(bundle.failures)} parse_issues={len(bundle.parse_issues)}"
