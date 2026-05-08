@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -20,6 +21,9 @@ THIN_BORDER = Border(
     bottom=Side(style="thin", color="D9D9D9"),
 )
 
+GROUP_LONG_PATTERN = re.compile(r"group_(\d+)")
+GROUP_SHORT_PATTERN = re.compile(r"^g(\d+)([a-zA-Z]*)_")
+
 
 def pick_first_existing_column(df: pd.DataFrame, candidates: list[str]) -> str | None:
     for name in candidates:
@@ -37,6 +41,72 @@ def remove_sheet_if_exists(wb, title: str) -> None:
         wb.remove(wb[title])
 
 
+def natural_group_key(value: str) -> tuple[int, int, str, str]:
+    value = value or ""
+
+    short_match = GROUP_SHORT_PATTERN.search(value)
+    if short_match:
+        number = int(short_match.group(1))
+        short_suffix = short_match.group(2)
+
+        short_suffix_map = {
+            "": "",
+            "h": "hard",
+            "t": "traps",
+        }
+        suffix_token = short_suffix_map.get(short_suffix, short_suffix)
+
+        suffix_priority = {
+            "": 0,
+            "hard": 1,
+            "traps": 2,
+            "trap": 2,
+        }
+
+        return (
+            number,
+            suffix_priority.get(suffix_token, 999),
+            suffix_token,
+            value,
+        )
+
+    long_match = GROUP_LONG_PATTERN.search(value)
+    if long_match:
+        number = int(long_match.group(1))
+
+        suffix_token = ""
+        if "_hard" in value:
+            suffix_token = "hard"
+        elif "_traps" in value or "_trap" in value:
+            suffix_token = "traps"
+
+        suffix_priority = {
+            "": 0,
+            "hard": 1,
+            "traps": 2,
+        }
+
+        return (
+            number,
+            suffix_priority.get(suffix_token, 999),
+            suffix_token,
+            value,
+        )
+
+    return (10**9, 999, "", value)
+
+
+def ordered_unique_strings(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        out.append(value)
+    return out
+
+
 def read_known_instances(instance_summary_csv: Path | None) -> list[str]:
     if instance_summary_csv is None or not instance_summary_csv.exists():
         return []
@@ -49,18 +119,28 @@ def read_known_instances(instance_summary_csv: Path | None) -> list[str]:
     if instance_col is None:
         return []
 
-    return sorted(str(x) for x in df[instance_col].dropna().unique())
+    values = [str(x) for x in df[instance_col].dropna().tolist()]
+    return sorted(ordered_unique_strings(values), key=natural_group_key)
 
 
 def expand_matrix_columns(matrix: pd.DataFrame, known_instances: list[str]) -> pd.DataFrame:
     matrix = matrix.copy()
     matrix.columns = [str(c) for c in matrix.columns]
+    matrix.index = [str(i) for i in matrix.index]
+
+    ordered_rows = sorted(matrix.index.tolist())
 
     if not known_instances:
-        return matrix.sort_index().sort_index(axis=1)
+        ordered_columns = sorted(matrix.columns.tolist(), key=natural_group_key)
+        return matrix.reindex(index=ordered_rows, columns=ordered_columns)
 
-    all_columns = sorted(set(matrix.columns).union(known_instances))
-    return matrix.reindex(columns=all_columns).sort_index().sort_index(axis=1)
+    known_order = ordered_unique_strings(known_instances)
+    known_set = set(known_order)
+    extras = [col for col in matrix.columns if col not in known_set]
+    extras = sorted(extras, key=natural_group_key)
+
+    ordered_columns = known_order + extras
+    return matrix.reindex(index=ordered_rows, columns=ordered_columns)
 
 
 def write_matrix_sheet(

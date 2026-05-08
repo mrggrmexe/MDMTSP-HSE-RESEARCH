@@ -55,28 +55,61 @@ WARNING_PATTERNS = (
     re.compile(r"\bdeprecated\b", re.IGNORECASE),
 )
 
-GROUP_PATTERN = re.compile(r"group_(\d+)(.*)")
+GROUP_LONG_PATTERN = re.compile(r"group_(\d+)")
+GROUP_SHORT_PATTERN = re.compile(r"^g(\d+)([a-zA-Z]*)_")
 
 
 def natural_group_key(value: str) -> tuple[int, int, str]:
-    match = GROUP_PATTERN.search(value)
-    if not match:
-        return (10**9, 999, value)
+    value = value or ""
 
-    number = int(match.group(1))
-    suffix = match.group(2)
+    short_match = GROUP_SHORT_PATTERN.search(value)
+    if short_match:
+        number = int(short_match.group(1))
+        short_suffix = short_match.group(2)
 
-    suffix_priority = {
-        "": 0,
-        "_hard": 1,
-        "_traps": 2,
-    }
+        short_suffix_map = {
+            "": "",
+            "h": "hard",
+            "t": "traps",
+        }
+        suffix_token = short_suffix_map.get(short_suffix, short_suffix)
 
-    return (
-        number,
-        suffix_priority.get(suffix, 999),
-        suffix,
-    )
+        suffix_priority = {
+            "": 0,
+            "hard": 1,
+            "traps": 2,
+            "trap": 2,
+        }
+
+        return (
+            number,
+            suffix_priority.get(suffix_token, 999),
+            suffix_token,
+        )
+
+    long_match = GROUP_LONG_PATTERN.search(value)
+    if long_match:
+        number = int(long_match.group(1))
+
+        suffix_token = ""
+        if "_hard" in value:
+            suffix_token = "hard"
+        elif "_traps" in value or "_trap" in value:
+            suffix_token = "traps"
+
+        suffix_priority = {
+            "": 0,
+            "hard": 1,
+            "traps": 2,
+        }
+
+        return (
+            number,
+            suffix_priority.get(suffix_token, 999),
+            suffix_token,
+        )
+
+    return (10**9, 999, value)
 
 
 def instance_sort_key(instance_name: str, customer_count: int | None) -> tuple[tuple[int, int, str], int, str]:
@@ -935,7 +968,13 @@ def build_baseline_matrix(run_rows: Sequence[dict[str, Any]], algorithms: Sequen
     output: list[dict[str, Any]] = []
     ordered_algorithms = list(sorted(set(algorithms)))
 
-    for instance_name, rows in sorted(grouped.items(), key=lambda item: ((as_int(item[1][0].get("customer_count")) or -1), item[0])):
+    for instance_name, rows in sorted(
+        grouped.items(),
+        key=lambda item: instance_sort_key(
+            item[0],
+            as_int(item[1][0].get("customer_count")),
+        ),
+    ):
         base: dict[str, Any] = {
             "instance_name": instance_name,
             "instance_type": as_str(rows[0].get("instance_type")),
