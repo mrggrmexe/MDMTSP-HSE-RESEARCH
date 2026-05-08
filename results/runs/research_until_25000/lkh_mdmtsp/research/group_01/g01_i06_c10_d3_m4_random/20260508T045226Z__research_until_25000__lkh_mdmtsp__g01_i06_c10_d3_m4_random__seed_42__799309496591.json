@@ -1,0 +1,97 @@
+{
+  "algorithm": {
+    "id": "lkh_mdmtsp",
+    "parameters": {
+      "improve_iterations": 0
+    }
+  },
+  "algorithm_id": "lkh_mdmtsp",
+  "customer_count": 10,
+  "depot_count": 3,
+  "execution": {
+    "seed": 42,
+    "timestamp_utc": "2026-05-08T04:52:26Z",
+    "wall_time_ms": 0.275,
+    "wall_time_s": 0.000275,
+    "wall_time_us": 275
+  },
+  "feasible": true,
+  "improve_iterations": 0,
+  "instance": {
+    "customer_count": 10,
+    "depot_count": 3,
+    "name": "group_01_instance_06_customers_10_depots_3_salesmen_4_random",
+    "path": "/Users/mrggrm/Documents/GitHub/MDMTSP-HSE-RESEARCH/instances/research/group_01/g01_i06_c10_d3_m4_random.json",
+    "return_to_depot": true,
+    "salesman_count": 4
+  },
+  "instance_name": "group_01_instance_06_customers_10_depots_3_salesmen_4_random",
+  "instance_path": "/Users/mrggrm/Documents/GitHub/MDMTSP-HSE-RESEARCH/instances/research/group_01/g01_i06_c10_d3_m4_random.json",
+  "objective": 4247.45390520189,
+  "result": {
+    "feasible": true,
+    "objective": 4247.45390520189,
+    "route_count": 4,
+    "status": "ok"
+  },
+  "return_to_depot": true,
+  "route_count": 4,
+  "routes": [
+    {
+      "depot_id": 0,
+      "nodes": [
+        0,
+        12,
+        4,
+        6,
+        8,
+        10,
+        3,
+        7,
+        5,
+        0
+      ],
+      "salesman_id": 0
+    },
+    {
+      "depot_id": 1,
+      "nodes": [
+        1,
+        1
+      ],
+      "salesman_id": 1
+    },
+    {
+      "depot_id": 1,
+      "nodes": [
+        1,
+        9,
+        11,
+        1
+      ],
+      "salesman_id": 2
+    },
+    {
+      "depot_id": 2,
+      "nodes": [
+        2,
+        2
+      ],
+      "salesman_id": 3
+    }
+  ],
+  "run_id": "20260508T045226Z__research_until_25000__lkh_mdmtsp__g01_i06_c10_d3_m4_random__seed_42__799309496591",
+  "salesman_count": 4,
+  "schema_version": 2,
+  "seed": 42,
+  "source": {
+    "instance_path": "/Users/mrggrm/Documents/GitHub/MDMTSP-HSE-RESEARCH/instances/research/group_01/g01_i06_c10_d3_m4_random.json",
+    "mode": "instance_file"
+  },
+  "status": "ok",
+  "suite_name": "research_until_25000",
+  "timestamp_utc": "2026-05-08T04:52:26Z",
+  "wall_time_ms": 0.275,
+  "wall_time_s": 0.000275,
+  "wall_time_us": 275
+}
