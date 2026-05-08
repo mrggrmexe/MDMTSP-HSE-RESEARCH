@@ -124,6 +124,10 @@ std::string canonical_algorithm_id(std::string_view value) {
         return "cheapest_insertion_tabu";
     }
 
+    if (value == "lkh_mdmtsp") {
+        return "lkh_mdmtsp";
+    }
+
     throw std::invalid_argument("unsupported algorithm: " + std::string(value));
 }
 
@@ -526,6 +530,10 @@ mdmtsp::MDMTSPSolution solve_with_algorithm(const std::string& algorithm_id,
 
     if (algorithm_id == "cheapest_insertion_tabu") {
         return mdmtsp::solve_mdmtsp_cheapest_insertion_tabu(instance, rng);
+    }
+
+    if (algorithm_id == "lkh_mdmtsp") {
+        return mdmtsp::solve_mdmtsp_lkh_mdmtsp(instance, rng);
     }
 
     throw std::invalid_argument("unsupported algorithm: " + algorithm_id);

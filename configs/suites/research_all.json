@@ -9,7 +9,8 @@
     "nearest_neighbour_2opt_v2",
     "cheapest_insertion_2opt",
     "cheapest_insertion_vnd",
-    "cheapest_insertion_tabu"
+    "cheapest_insertion_tabu",
+    "lkh_mdmtsp"
   ],
   "instance_roots": [
     "instances/research"
