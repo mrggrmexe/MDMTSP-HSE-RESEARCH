@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Callable
 
 
-GROUP_NAME = "group_03"
 GROUP_PREFIX = "g03"
 DEFAULT_OUTPUT_DIR = Path("instances/research/group_03")
 DEFAULT_CUSTOMERS = 500
@@ -39,13 +38,13 @@ def clamp(x: float, lo: float, hi: float) -> float:
 
 
 def sample_gaussian_point(rng: random.Random, cx: float, cy: float, sigma: float) -> tuple[float, float]:
-    return (rng.gauss(cx, sigma), rng.gauss(cy, sigma))
+    return rng.gauss(cx, sigma), rng.gauss(cy, sigma)
 
 
 def sample_disc_point(rng: random.Random, cx: float, cy: float, radius: float) -> tuple[float, float]:
     angle = rng.uniform(0.0, 2.0 * math.pi)
     rr = radius * math.sqrt(rng.random())
-    return (cx + rr * math.cos(angle), cy + rr * math.sin(angle))
+    return cx + rr * math.cos(angle), cy + rr * math.sin(angle)
 
 
 def sample_segment_point(
@@ -57,9 +56,10 @@ def sample_segment_point(
     noise: float,
 ) -> tuple[float, float]:
     t = rng.random()
-    x = ax + (bx - ax) * t + rng.gauss(0.0, noise)
-    y = ay + (by - ay) * t + rng.gauss(0.0, noise)
-    return (x, y)
+    return (
+        ax + (bx - ax) * t + rng.gauss(0.0, noise),
+        ay + (by - ay) * t + rng.gauss(0.0, noise),
+    )
 
 
 def normalize_points(points: list[tuple[float, float]], width: float = 1000.0, height: float = 1000.0) -> list[tuple[float, float]]:
@@ -72,31 +72,27 @@ def normalize_points(points: list[tuple[float, float]], width: float = 1000.0, h
     span_x = max(max_x - min_x, 1e-9)
     span_y = max(max_y - min_y, 1e-9)
 
-    scale_x = width / span_x
-    scale_y = height / span_y
-    scale = min(scale_x, scale_y) * 0.92
+    scale = min(width / span_x, height / span_y) * 0.92
 
-    out: list[tuple[float, float]] = []
-    for x, y in points:
-        nx = (x - min_x) * scale + width * 0.04
-        ny = (y - min_y) * scale + height * 0.04
-        out.append((clamp(nx, 0.0, width), clamp(ny, 0.0, height)))
-    return out
+    return [
+        (
+            clamp((x - min_x) * scale + width * 0.04, 0.0, width),
+            clamp((y - min_y) * scale + height * 0.04, 0.0, height),
+        )
+        for x, y in points
+    ]
 
 
-def allocate_salesmen(rng: random.Random, depots: int, salesmen: int, bias: list[float] | None = None) -> list[int]:
+def allocate_salesmen(rng: random.Random, depots: int, salesmen: int, bias: list[float]) -> list[int]:
     if salesmen < depots:
         raise ValueError("salesmen must be >= depots")
 
-    weights = bias[:] if bias is not None else [1.0] * depots
-    if len(weights) != depots:
-        raise ValueError("bias length must match depot count")
+    if len(bias) < depots:
+        bias = bias + [1.0] * (depots - len(bias))
 
+    weights = bias[:depots]
     alloc = [1] * depots
     extra = salesmen - depots
-
-    if extra == 0:
-        return alloc
 
     total = sum(weights)
     probs = [w / total for w in weights]
@@ -105,11 +101,13 @@ def allocate_salesmen(rng: random.Random, depots: int, salesmen: int, bias: list
         u = rng.random()
         acc = 0.0
         chosen = depots - 1
+
         for i, p in enumerate(probs):
             acc += p
             if u <= acc:
                 chosen = i
                 break
+
         alloc[chosen] += 1
 
     return alloc
@@ -123,28 +121,24 @@ def build_instance_json(
     salesmen_per_depot: list[int],
     family: str,
 ) -> dict:
-    depots = []
-    customers = []
+    depots = [
+        {
+            "id": depot_id,
+            "x": round(x, 6),
+            "y": round(y, 6),
+            "salesmen": int(salesmen),
+        }
+        for depot_id, ((x, y), salesmen) in enumerate(zip(depots_xy, salesmen_per_depot, strict=True))
+    ]
 
-    for depot_id, ((x, y), salesmen) in enumerate(zip(depots_xy, salesmen_per_depot, strict=True)):
-        depots.append(
-            {
-                "id": depot_id,
-                "x": round(x, 6),
-                "y": round(y, 6),
-                "salesmen": int(salesmen),
-            }
-        )
-
-    next_id = len(depots_xy)
-    for idx, (x, y) in enumerate(customers_xy):
-        customers.append(
-            {
-                "id": next_id + idx,
-                "x": round(x, 6),
-                "y": round(y, 6),
-            }
-        )
+    customers = [
+        {
+            "id": len(depots_xy) + idx,
+            "x": round(x, 6),
+            "y": round(y, 6),
+        }
+        for idx, (x, y) in enumerate(customers_xy)
+    ]
 
     return {
         "name": name,
@@ -157,32 +151,31 @@ def build_instance_json(
     }
 
 
-def gen_overlapping_cluster(spec: InstanceSpec) -> tuple[list[tuple[float, float]], list[tuple[float, float]], list[int]]:
+def gen_overlapping_cluster(spec: InstanceSpec):
     rng = random.Random(spec.seed)
 
-    centers = [
-        (0.0, 0.0),
-        (110.0, 20.0),
-        (55.0, 80.0),
-    ]
+    centers = [(0.0, 0.0), (110.0, 20.0), (55.0, 80.0)]
     sigmas = [28.0, 32.0, 26.0]
     weights = [0.40, 0.34, 0.26]
 
-    customers: list[tuple[float, float]] = []
+    customers = []
+
     for _ in range(spec.customers):
         u = rng.random()
         acc = 0.0
         cluster = 0
+
         for i, w in enumerate(weights):
             acc += w
             if u <= acc:
                 cluster = i
                 break
-        x, y = sample_gaussian_point(rng, centers[cluster][0], centers[cluster][1], sigmas[cluster])
+
+        x, y = sample_gaussian_point(rng, *centers[cluster], sigmas[cluster])
 
         if rng.random() < 0.12:
             mix = (cluster + rng.randint(1, 2)) % 3
-            x2, y2 = sample_gaussian_point(rng, centers[mix][0], centers[mix][1], sigmas[mix] * 0.85)
+            x2, y2 = sample_gaussian_point(rng, *centers[mix], sigmas[mix] * 0.85)
             x = 0.55 * x + 0.45 * x2
             y = 0.55 * y + 0.45 * y2
 
@@ -193,23 +186,18 @@ def gen_overlapping_cluster(spec: InstanceSpec) -> tuple[list[tuple[float, float
         (130.0, 8.0),
         (48.0, 108.0),
         (55.0, 35.0),
+        (-85.0, 75.0),
     ][: spec.depots]
 
-    depot_bias = [1.0, 1.0, 1.0, 1.5][: spec.depots]
-    salesmen = allocate_salesmen(rng, spec.depots, spec.salesmen, depot_bias)
+    salesmen = allocate_salesmen(rng, spec.depots, spec.salesmen, [1.0, 1.0, 1.0, 1.5, 1.2])
 
-    depots = normalize_points(depots)
-    customers = normalize_points(customers)
-    return depots, customers, salesmen
+    return normalize_points(depots), normalize_points(customers), salesmen
 
 
-def gen_bridge_line(spec: InstanceSpec) -> tuple[list[tuple[float, float]], list[tuple[float, float]], list[int]]:
+def gen_bridge_line(spec: InstanceSpec):
     rng = random.Random(spec.seed)
 
-    left_center = (-140.0, 0.0)
-    right_center = (140.0, 0.0)
-
-    customers: list[tuple[float, float]] = []
+    customers = []
 
     left_n = int(spec.customers * 0.38)
     right_n = int(spec.customers * 0.38)
@@ -217,11 +205,14 @@ def gen_bridge_line(spec: InstanceSpec) -> tuple[list[tuple[float, float]], list
     line_n = spec.customers - left_n - right_n - bridge_n
 
     for _ in range(left_n):
-        customers.append(sample_gaussian_point(rng, left_center[0], left_center[1], 22.0))
+        customers.append(sample_gaussian_point(rng, -140.0, 0.0, 22.0))
+
     for _ in range(right_n):
-        customers.append(sample_gaussian_point(rng, right_center[0], right_center[1], 22.0))
+        customers.append(sample_gaussian_point(rng, 140.0, 0.0, 22.0))
+
     for _ in range(bridge_n):
         customers.append(sample_segment_point(rng, -90.0, -10.0, 90.0, 10.0, 6.0))
+
     for _ in range(line_n):
         customers.append(sample_segment_point(rng, -175.0, 55.0, 175.0, -55.0, 4.0))
 
@@ -230,39 +221,35 @@ def gen_bridge_line(spec: InstanceSpec) -> tuple[list[tuple[float, float]], list
         (175.0, 45.0),
         (0.0, 70.0),
         (0.0, -70.0),
+        (85.0, -95.0),
     ][: spec.depots]
 
-    depot_bias = [1.4, 1.4, 0.8, 0.8][: spec.depots]
-    salesmen = allocate_salesmen(rng, spec.depots, spec.salesmen, depot_bias)
+    salesmen = allocate_salesmen(rng, spec.depots, spec.salesmen, [1.4, 1.4, 0.8, 0.8, 1.0])
 
-    depots = normalize_points(depots)
-    customers = normalize_points(customers)
-    return depots, customers, salesmen
+    return normalize_points(depots), normalize_points(customers), salesmen
 
 
-def gen_asymmetric_depot(spec: InstanceSpec) -> tuple[list[tuple[float, float]], list[tuple[float, float]], list[int]]:
+def gen_asymmetric_depot(spec: InstanceSpec):
     rng = random.Random(spec.seed)
 
-    centers = [
-        (-60.0, -15.0),
-        (25.0, 30.0),
-        (105.0, 0.0),
-        (35.0, -75.0),
-    ]
+    centers = [(-60.0, -15.0), (25.0, 30.0), (105.0, 0.0), (35.0, -75.0)]
     weights = [0.46, 0.22, 0.18, 0.14]
 
-    customers: list[tuple[float, float]] = []
+    customers = []
+
     for _ in range(spec.customers):
         u = rng.random()
         acc = 0.0
         cluster = 0
+
         for i, w in enumerate(weights):
             acc += w
             if u <= acc:
                 cluster = i
                 break
+
         sigma = 18.0 if cluster == 0 else 14.0
-        customers.append(sample_gaussian_point(rng, centers[cluster][0], centers[cluster][1], sigma))
+        customers.append(sample_gaussian_point(rng, *centers[cluster], sigma))
 
     depots = [
         (-120.0, -95.0),
@@ -272,18 +259,15 @@ def gen_asymmetric_depot(spec: InstanceSpec) -> tuple[list[tuple[float, float]],
         (-20.0, 70.0),
     ][: spec.depots]
 
-    depot_bias = [3.2, 0.8, 0.7, 0.7, 1.0][: spec.depots]
-    salesmen = allocate_salesmen(rng, spec.depots, spec.salesmen, depot_bias)
+    salesmen = allocate_salesmen(rng, spec.depots, spec.salesmen, [3.2, 0.8, 0.7, 0.7, 1.0])
 
-    depots = normalize_points(depots)
-    customers = normalize_points(customers)
-    return depots, customers, salesmen
+    return normalize_points(depots), normalize_points(customers), salesmen
 
 
-def gen_mixed_density(spec: InstanceSpec) -> tuple[list[tuple[float, float]], list[tuple[float, float]], list[int]]:
+def gen_mixed_density(spec: InstanceSpec):
     rng = random.Random(spec.seed)
 
-    customers: list[tuple[float, float]] = []
+    customers = []
 
     dense_n = int(spec.customers * 0.55)
     medium_n = int(spec.customers * 0.28)
@@ -291,8 +275,10 @@ def gen_mixed_density(spec: InstanceSpec) -> tuple[list[tuple[float, float]], li
 
     for _ in range(dense_n):
         customers.append(sample_gaussian_point(rng, -30.0, 20.0, 8.0))
+
     for _ in range(medium_n):
         customers.append(sample_gaussian_point(rng, 80.0, -10.0, 28.0))
+
     for _ in range(sparse_n):
         customers.append((rng.uniform(-160.0, 160.0), rng.uniform(-120.0, 120.0)))
 
@@ -301,20 +287,18 @@ def gen_mixed_density(spec: InstanceSpec) -> tuple[list[tuple[float, float]], li
         (110.0, 20.0),
         (5.0, 95.0),
         (150.0, -70.0),
+        (-120.0, 85.0),
     ][: spec.depots]
 
-    depot_bias = [1.6, 1.2, 0.9, 0.8][: spec.depots]
-    salesmen = allocate_salesmen(rng, spec.depots, spec.salesmen, depot_bias)
+    salesmen = allocate_salesmen(rng, spec.depots, spec.salesmen, [1.6, 1.2, 0.9, 0.8, 1.0])
 
-    depots = normalize_points(depots)
-    customers = normalize_points(customers)
-    return depots, customers, salesmen
+    return normalize_points(depots), normalize_points(customers), salesmen
 
 
-def gen_outlier_heavy(spec: InstanceSpec) -> tuple[list[tuple[float, float]], list[tuple[float, float]], list[int]]:
+def gen_outlier_heavy(spec: InstanceSpec):
     rng = random.Random(spec.seed)
 
-    customers: list[tuple[float, float]] = []
+    customers = []
 
     core_n = int(spec.customers * 0.72)
     near_outlier_n = int(spec.customers * 0.14)
@@ -322,8 +306,10 @@ def gen_outlier_heavy(spec: InstanceSpec) -> tuple[list[tuple[float, float]], li
 
     for _ in range(core_n):
         customers.append(sample_gaussian_point(rng, 0.0, 0.0, 22.0))
+
     for _ in range(near_outlier_n):
         customers.append(sample_disc_point(rng, 0.0, 0.0, 145.0))
+
     for _ in range(far_outlier_n):
         angle = rng.uniform(0.0, 2.0 * math.pi)
         radius = rng.uniform(220.0, 310.0)
@@ -334,17 +320,15 @@ def gen_outlier_heavy(spec: InstanceSpec) -> tuple[list[tuple[float, float]], li
         (40.0, 20.0),
         (0.0, 85.0),
         (0.0, -95.0),
+        (120.0, 0.0),
     ][: spec.depots]
 
-    depot_bias = [1.1, 1.1, 0.9, 0.9][: spec.depots]
-    salesmen = allocate_salesmen(rng, spec.depots, spec.salesmen, depot_bias)
+    salesmen = allocate_salesmen(rng, spec.depots, spec.salesmen, [1.1, 1.1, 0.9, 0.9, 1.0])
 
-    depots = normalize_points(depots)
-    customers = normalize_points(customers)
-    return depots, customers, salesmen
+    return normalize_points(depots), normalize_points(customers), salesmen
 
 
-GENERATORS: dict[str, Callable[[InstanceSpec], tuple[list[tuple[float, float]], list[tuple[float, float]], list[int]]]] = {
+GENERATORS: dict[str, Callable] = {
     "overlapping_cluster": gen_overlapping_cluster,
     "bridge_line": gen_bridge_line,
     "asymmetric_depot": gen_asymmetric_depot,
@@ -356,19 +340,21 @@ GENERATORS: dict[str, Callable[[InstanceSpec], tuple[list[tuple[float, float]], 
 def next_group03_index(output_dir: Path) -> int:
     pattern = re.compile(r"^g03_i(\d+)_")
     max_seen = 0
+
     if output_dir.exists():
         for path in output_dir.glob("g03_i*.json"):
             match = pattern.match(path.name)
             if match:
                 max_seen = max(max_seen, int(match.group(1)))
+
     return max_seen + 1
 
 
 def make_specs(base_seed: int, customers: int) -> list[InstanceSpec]:
-    specs: list[InstanceSpec] = []
+    specs = []
     offset = 0
 
-    family_depot_salesmen = {
+    variants = {
         "overlapping_cluster": [(4, 12), (4, 13), (5, 15)],
         "bridge_line": [(4, 12), (5, 14)],
         "asymmetric_depot": [(4, 13), (5, 16)],
@@ -377,9 +363,8 @@ def make_specs(base_seed: int, customers: int) -> list[InstanceSpec]:
     }
 
     for family, count in COUNTS.items():
-        variants = family_depot_salesmen[family]
         for i in range(count):
-            depots, salesmen = variants[i % len(variants)]
+            depots, salesmen = variants[family][i % len(variants[family])]
             specs.append(
                 InstanceSpec(
                     family=family,
@@ -417,15 +402,16 @@ def main() -> int:
 
     created = []
 
-    for local_idx, spec in enumerate(specs, start=0):
+    for local_idx, spec in enumerate(specs):
         file_idx = start_index + local_idx
+
         name = (
             f"{GROUP_PREFIX}_i{file_idx:02d}_"
             f"c{spec.customers}_d{spec.depots}_m{spec.salesmen}_adversarial"
         )
-        filename = f"{name}.json"
 
         depots_xy, customers_xy, salesmen_per_depot = GENERATORS[spec.family](spec)
+
         payload = build_instance_json(
             name=name,
             seed=spec.seed,
@@ -435,7 +421,7 @@ def main() -> int:
             family=spec.family,
         )
 
-        output_path = args.output_dir / filename
+        output_path = args.output_dir / f"{name}.json"
         created.append((output_path, spec.family, spec.seed))
 
         if not args.dry_run:
@@ -446,11 +432,13 @@ def main() -> int:
     print(f"start_index: {start_index:02d}")
     print(f"customers_per_instance: {args.customers}")
     print("families:")
+
     for family, count in COUNTS.items():
         print(f"  {family}: {count}")
 
     for path, family, seed in created:
-        print(f"  wrote: {path}  family={family} seed={seed}")
+        action = "would write" if args.dry_run else "wrote"
+        print(f"  {action}: {path}  family={family} seed={seed}")
 
     return 0
 
