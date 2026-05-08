@@ -965,7 +965,7 @@ void reroute_all_routes_with_lkh(
 
 }  // namespace
 
-[[nodiscard]] MDMTSPSolution solve_mdmtsp_lkh_mdmtsp(
+[[nodiscard]] MDMTSPSolution solve_mdmtsp_lkh_mdmtsp_v2(
     const MDMTSPInstance& instance,
     Random& rng
 ) {
@@ -1000,7 +1000,7 @@ void reroute_all_routes_with_lkh(
     }
 
     if (chunks.size() != instance.salesman_count || salesman_to_depot.size() != instance.salesman_count) {
-        throw std::logic_error("solve_mdmtsp_lkh_mdmtsp: inconsistent route partition");
+        throw std::logic_error("solve_mdmtsp_lkh_mdmtsp_v2: inconsistent route partition");
     }
 
     bool lkh_enabled = true;
