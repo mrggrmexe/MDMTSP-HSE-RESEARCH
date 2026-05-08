@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -16,7 +17,7 @@ import pandas as pd
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Build aggregate plots and optional solution visualizations from results/."
+        description="Build lightweight aggregate plots and optional solution visualizations from results/."
     )
     parser.add_argument(
         "--tables-root",
@@ -51,6 +52,11 @@ def parse_args() -> argparse.Namespace:
         "--no-overwrite",
         action="store_true",
         help="Do not overwrite existing plot files.",
+    )
+    parser.add_argument(
+        "--keep-stale-solution-pngs",
+        action="store_true",
+        help="Do not delete previous solution PNGs before rendering.",
     )
     return parser.parse_args()
 
@@ -131,9 +137,9 @@ def plot_history_comparison(tables_root: Path, plots_root: Path, overwrite: bool
     work = work.sort_values(by=[gap_col, time_col], ascending=[True, True]).reset_index(drop=True)
 
     x = np.arange(len(work))
-    fig, ax1 = plt.subplots(figsize=(12.0, 6.5))
+    fig, ax1 = plt.subplots(figsize=(12.0, 6.2))
 
-    ax1.bar(x, work[gap_col], alpha=0.8)
+    ax1.bar(x, work[gap_col], alpha=0.82)
     ax1.set_ylabel("median gap to best observed, %", fontsize=11)
     ax1.set_xticks(x)
     ax1.set_xticklabels(work[algo_col], rotation=20, ha="right", fontsize=10)
@@ -145,107 +151,6 @@ def plot_history_comparison(tables_root: Path, plots_root: Path, overwrite: bool
     ax2.set_ylabel("median wall time, ms", fontsize=11)
 
     fig.subplots_adjust(left=0.10, right=0.90, top=0.88, bottom=0.22)
-    fig.savefig(dst, dpi=220, bbox_inches="tight", facecolor="white")
-    plt.close(fig)
-
-
-def plot_instance_quality_heatmap(tables_root: Path, plots_root: Path, overwrite: bool) -> None:
-    src = tables_root / "algorithm_instance_summary.csv"
-    dst = plots_root / "instance_gap_heatmap.png"
-
-    if dst.exists() and not overwrite:
-        return
-
-    df = read_csv_optional(src)
-    if df is None or df.empty:
-        print(
-            f"plot_results.py: skipped heatmap (missing or empty {src})",
-            file=sys.stderr,
-        )
-        return
-
-    algo_col = pick_first_existing_column(df, ["algorithm_id", "algorithm"])
-    instance_col = pick_first_existing_column(df, ["instance_name", "instance"])
-    gap_col = pick_first_existing_column(
-        df,
-        [
-            "median_gap_to_best_observed",
-            "mean_gap_to_best_observed",
-            "min_gap_to_best_observed",
-        ],
-    )
-
-    if algo_col is None or instance_col is None or gap_col is None:
-        print(
-            "plot_results.py: skipped heatmap (required columns are missing)",
-            file=sys.stderr,
-        )
-        return
-
-    work = df[[algo_col, instance_col, gap_col]].copy()
-    work[gap_col] = as_numeric(work[gap_col])
-    work = work.dropna(subset=[gap_col])
-
-    if work.empty:
-        print("plot_results.py: skipped heatmap (no numeric rows)", file=sys.stderr)
-        return
-
-    pivot = (
-        work.pivot_table(
-            index=algo_col,
-            columns=instance_col,
-            values=gap_col,
-            aggfunc="median",
-        )
-        .sort_index()
-        .sort_index(axis=1)
-    )
-
-    if pivot.empty:
-        print("plot_results.py: skipped heatmap (pivot is empty)", file=sys.stderr)
-        return
-
-    n_rows, n_cols = pivot.shape
-
-    fig_width = max(14.0, min(80.0, 0.55 * n_cols + 6.0))
-    fig_height = max(6.0, min(40.0, 0.90 * n_rows + 4.0))
-
-    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
-    im = ax.imshow(pivot.values, aspect="auto", interpolation="nearest", cmap="viridis")
-
-    ax.set_title("Instance-level quality heatmap", fontsize=16, pad=12)
-
-    ax.set_yticks(np.arange(n_rows))
-    ax.set_yticklabels(pivot.index, fontsize=10)
-
-    if n_cols <= 60:
-        step = 1
-    elif n_cols <= 120:
-        step = 2
-    elif n_cols <= 240:
-        step = 4
-    else:
-        step = max(1, n_cols // 60)
-
-    xticks = np.arange(0, n_cols, step)
-    ax.set_xticks(xticks)
-    ax.set_xticklabels(
-        [str(pivot.columns[i]) for i in xticks],
-        rotation=75,
-        ha="right",
-        fontsize=8,
-    )
-
-    ax.set_xlabel("instance", fontsize=11)
-    ax.set_ylabel("algorithm", fontsize=11)
-
-    cbar = fig.colorbar(im, ax=ax, fraction=0.025, pad=0.02)
-    cbar.set_label("gap to best observed, %", fontsize=11)
-
-    ax.tick_params(axis="x", pad=2)
-    ax.tick_params(axis="y", pad=2)
-
-    fig.tight_layout()
     fig.savefig(dst, dpi=220, bbox_inches="tight", facecolor="white")
     plt.close(fig)
 
@@ -274,15 +179,30 @@ def write_solution_manifest(manifest_path: Path, rows: list[dict[str, str]]) -> 
         writer.writerows(rows)
 
 
+def clean_solution_visualizations_root(solutions_root: Path) -> None:
+    if not solutions_root.exists():
+        return
+    for child in solutions_root.iterdir():
+        if child.is_dir():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+
+
 def render_solution_visualizations(
     runs_root: Path,
     plots_root: Path,
     max_solution_customers: int,
     overwrite: bool,
+    keep_stale_solution_pngs: bool,
 ) -> int:
     script_path = Path(__file__).resolve().parent / "visualize_solution.py"
     solutions_root = plots_root / "solutions"
     ensure_dir(solutions_root)
+
+    if overwrite and not keep_stale_solution_pngs:
+        clean_solution_visualizations_root(solutions_root)
+        ensure_dir(solutions_root)
 
     manifest_path = solutions_root / "solution_render_manifest.csv"
     rows: list[dict[str, str]] = []
@@ -390,7 +310,6 @@ def main() -> int:
     ensure_dir(args.plots_root)
 
     plot_history_comparison(args.tables_root, args.plots_root, overwrite)
-    plot_instance_quality_heatmap(args.tables_root, args.plots_root, overwrite)
 
     if not args.no_solution_visualizations:
         render_solution_visualizations(
@@ -398,6 +317,7 @@ def main() -> int:
             plots_root=args.plots_root,
             max_solution_customers=args.max_solution_customers,
             overwrite=overwrite,
+            keep_stale_solution_pngs=args.keep_stale_solution_pngs,
         )
 
     return 0
