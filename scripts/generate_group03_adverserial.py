@@ -1,533 +1,459 @@
+#!/usr/bin/env python3
 from __future__ import annotations
 
 import argparse
 import json
 import math
 import random
-import sys
-from dataclasses import asdict, dataclass
+import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
 
-@dataclass(frozen=True)
-class Point:
-    x: float
-    y: float
+GROUP_NAME = "group_03"
+GROUP_PREFIX = "g03"
+DEFAULT_OUTPUT_DIR = Path("instances/research/group_03")
+DEFAULT_CUSTOMERS = 500
+
+COUNTS = {
+    "overlapping_cluster": 12,
+    "bridge_line": 8,
+    "asymmetric_depot": 8,
+    "mixed_density": 6,
+    "outlier_heavy": 6,
+}
 
 
 @dataclass(frozen=True)
-class Depot:
-    id: int
-    x: float
-    y: float
-    salesmen: int
-
-
-@dataclass(frozen=True)
-class Customer:
-    id: int
-    x: float
-    y: float
-
-
-@dataclass(frozen=True)
-class GroupSpec:
-    group_id: int
-    instance_count: int
+class InstanceSpec:
+    family: str
     customers: int
-    depots_min: int
-    depots_max: int
-    special_types: tuple[str, ...] = ()
+    depots: int
+    salesmen: int
+    seed: int
 
 
-DEFAULT_SPECS: tuple[GroupSpec, ...] = (
-    GroupSpec(1, 10, 10, 1, 3),
-    GroupSpec(2, 10, 50, 3, 5),
-    GroupSpec(3, 10, 500, 3, 5),
-    GroupSpec(4, 5, 1000, 5, 10),
-    GroupSpec(5, 5, 10000, 1, 3),
-    GroupSpec(
-        6,
-        8,
-        10000,
-        5,
-        10,
-        special_types=(
-            "clustered",
-            "clustered",
-            "grid",
-            "grid",
-            "adversarial",
-            "adversarial",
-            "line",
-            "line",
-        ),
-    ),
-    GroupSpec(7, 2, 25000, 5, 10),
-    GroupSpec(8, 2, 100000, 1, 3),
-    GroupSpec(9, 2, 100000, 5, 10),
-    GroupSpec(10, 2, 100000, 100, 1000),
-)
+def clamp(x: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, x))
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--output-dir", type=Path, default=Path("instances/research"))
-    parser.add_argument("--master-seed", type=int, default=20260504)
-    parser.add_argument("--width", type=float, default=1000.0)
-    parser.add_argument("--height", type=float, default=1000.0)
-    parser.add_argument("--open-routes", action="store_true")
-    parser.add_argument("--pretty", action="store_true")
-    return parser.parse_args()
+def sample_gaussian_point(rng: random.Random, cx: float, cy: float, sigma: float) -> tuple[float, float]:
+    return (rng.gauss(cx, sigma), rng.gauss(cy, sigma))
 
 
-def clamp(value: float, low: float, high: float) -> float:
-    return max(low, min(high, value))
+def sample_disc_point(rng: random.Random, cx: float, cy: float, radius: float) -> tuple[float, float]:
+    angle = rng.uniform(0.0, 2.0 * math.pi)
+    rr = radius * math.sqrt(rng.random())
+    return (cx + rr * math.cos(angle), cy + rr * math.sin(angle))
 
 
-def random_point(rng: random.Random, width: float, height: float) -> Point:
-    return Point(
-        x=rng.uniform(0.0, width),
-        y=rng.uniform(0.0, height),
-    )
-
-
-def choose_depot_count(rng: random.Random, spec: GroupSpec) -> int:
-    return rng.randint(spec.depots_min, spec.depots_max)
-
-
-def choose_total_salesmen(
+def sample_segment_point(
     rng: random.Random,
-    customer_count: int,
-    depot_count: int,
-) -> int:
-    if customer_count <= 20:
-        low = depot_count
-        high = min(customer_count, depot_count * 3)
-    elif customer_count <= 1000:
-        low = depot_count
-        high = min(customer_count, depot_count * 5)
-    elif customer_count <= 25000:
-        low = depot_count * 2
-        high = min(customer_count, depot_count * 8)
-    else:
-        low = depot_count * 3
-        high = min(customer_count, depot_count * 12)
-
-    low = max(1, min(low, customer_count))
-    high = max(low, min(high, customer_count))
-    return rng.randint(low, high)
+    ax: float,
+    ay: float,
+    bx: float,
+    by: float,
+    noise: float,
+) -> tuple[float, float]:
+    t = rng.random()
+    x = ax + (bx - ax) * t + rng.gauss(0.0, noise)
+    y = ay + (by - ay) * t + rng.gauss(0.0, noise)
+    return (x, y)
 
 
-def distribute_salesmen_across_depots(
-    rng: random.Random,
-    depot_count: int,
-    total_salesmen: int,
-) -> list[int]:
-    if depot_count <= 0:
-        raise ValueError("depot_count must be positive")
-    if total_salesmen < depot_count:
-        raise ValueError("total_salesmen must be at least depot_count")
+def normalize_points(points: list[tuple[float, float]], width: float = 1000.0, height: float = 1000.0) -> list[tuple[float, float]]:
+    xs = [p[0] for p in points]
+    ys = [p[1] for p in points]
 
-    salesmen = [1] * depot_count
-    remaining = total_salesmen - depot_count
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
 
-    for _ in range(remaining):
-        salesmen[rng.randrange(depot_count)] += 1
+    span_x = max(max_x - min_x, 1e-9)
+    span_y = max(max_y - min_y, 1e-9)
 
-    return salesmen
+    scale_x = width / span_x
+    scale_y = height / span_y
+    scale = min(scale_x, scale_y) * 0.92
 
-
-def generate_random_depots(
-    rng: random.Random,
-    depot_count: int,
-    width: float,
-    height: float,
-) -> list[Point]:
-    return [random_point(rng, width, height) for _ in range(depot_count)]
+    out: list[tuple[float, float]] = []
+    for x, y in points:
+        nx = (x - min_x) * scale + width * 0.04
+        ny = (y - min_y) * scale + height * 0.04
+        out.append((clamp(nx, 0.0, width), clamp(ny, 0.0, height)))
+    return out
 
 
-def generate_random_customers(
-    rng: random.Random,
-    customer_count: int,
-    width: float,
-    height: float,
-) -> list[Point]:
-    return [random_point(rng, width, height) for _ in range(customer_count)]
+def allocate_salesmen(rng: random.Random, depots: int, salesmen: int, bias: list[float] | None = None) -> list[int]:
+    if salesmen < depots:
+        raise ValueError("salesmen must be >= depots")
 
+    weights = bias[:] if bias is not None else [1.0] * depots
+    if len(weights) != depots:
+        raise ValueError("bias length must match depot count")
 
-def generate_clustered_customers(
-    rng: random.Random,
-    customer_count: int,
-    width: float,
-    height: float,
-) -> list[Point]:
-    cluster_count = rng.randint(8, 16)
-    centers = [random_point(rng, width, height) for _ in range(cluster_count)]
-    sigma_x = width / rng.uniform(20.0, 35.0)
-    sigma_y = height / rng.uniform(20.0, 35.0)
+    alloc = [1] * depots
+    extra = salesmen - depots
 
-    customers: list[Point] = []
-    for _ in range(customer_count):
-        center = centers[rng.randrange(cluster_count)]
-        x = clamp(rng.gauss(center.x, sigma_x), 0.0, width)
-        y = clamp(rng.gauss(center.y, sigma_y), 0.0, height)
-        customers.append(Point(x=x, y=y))
+    if extra == 0:
+        return alloc
 
-    return customers
+    total = sum(weights)
+    probs = [w / total for w in weights]
 
-
-def generate_grid_customers(
-    rng: random.Random,
-    customer_count: int,
-    width: float,
-    height: float,
-) -> list[Point]:
-    cols = max(2, int(math.sqrt(customer_count)))
-    rows = max(2, math.ceil(customer_count / cols))
-
-    step_x = width / max(1, cols - 1)
-    step_y = height / max(1, rows - 1)
-    jitter_x = step_x * 0.15
-    jitter_y = step_y * 0.15
-
-    customers: list[Point] = []
-    for row in range(rows):
-        for col in range(cols):
-            if len(customers) >= customer_count:
+    for _ in range(extra):
+        u = rng.random()
+        acc = 0.0
+        chosen = depots - 1
+        for i, p in enumerate(probs):
+            acc += p
+            if u <= acc:
+                chosen = i
                 break
-            base_x = col * step_x
-            base_y = row * step_y
-            x = clamp(base_x + rng.uniform(-jitter_x, jitter_x), 0.0, width)
-            y = clamp(base_y + rng.uniform(-jitter_y, jitter_y), 0.0, height)
-            customers.append(Point(x=x, y=y))
+        alloc[chosen] += 1
 
-    return customers
+    return alloc
 
 
-def generate_adversarial_depots(
-    rng: random.Random,
-    depot_count: int,
-    width: float,
-    height: float,
-) -> list[Point]:
-    band_width = width * 0.08
-    return [
-        Point(
-            x=rng.uniform(0.0, band_width),
-            y=rng.uniform(0.0, height),
-        )
-        for _ in range(depot_count)
-    ]
-
-
-def generate_adversarial_customers(
-    rng: random.Random,
-    customer_count: int,
-    width: float,
-    height: float,
-) -> list[Point]:
-    cluster_count = rng.randint(6, 12)
-    centers: list[Point] = []
-
-    for _ in range(cluster_count):
-        centers.append(
-            Point(
-                x=rng.uniform(width * 0.55, width),
-                y=rng.uniform(0.0, height),
-            )
-        )
-
-    sigma_x = width / rng.uniform(30.0, 50.0)
-    sigma_y = height / rng.uniform(20.0, 35.0)
-
-    customers: list[Point] = []
-    for _ in range(customer_count):
-        center = centers[rng.randrange(cluster_count)]
-        x = clamp(rng.gauss(center.x, sigma_x), 0.0, width)
-        y = clamp(rng.gauss(center.y, sigma_y), 0.0, height)
-        customers.append(Point(x=x, y=y))
-
-    return customers
-
-
-def generate_line_customers(
-    rng: random.Random,
-    customer_count: int,
-    width: float,
-    height: float,
-) -> list[Point]:
-    line_type = rng.choice(("diagonal", "horizontal", "vertical"))
-    noise = min(width, height) / rng.uniform(80.0, 140.0)
-
-    customers: list[Point] = []
-
-    for _ in range(customer_count):
-        t = rng.uniform(0.0, 1.0)
-
-        if line_type == "diagonal":
-            base_x = t * width
-            base_y = t * height
-            x = clamp(rng.gauss(base_x, noise), 0.0, width)
-            y = clamp(rng.gauss(base_y, noise), 0.0, height)
-        elif line_type == "horizontal":
-            base_x = t * width
-            base_y = height * 0.5
-            x = clamp(rng.gauss(base_x, noise), 0.0, width)
-            y = clamp(rng.gauss(base_y, noise), 0.0, height)
-        else:
-            base_x = width * 0.5
-            base_y = t * height
-            x = clamp(rng.gauss(base_x, noise), 0.0, width)
-            y = clamp(rng.gauss(base_y, noise), 0.0, height)
-
-        customers.append(Point(x=x, y=y))
-
-    return customers
-
-
-def generate_points_for_instance(
-    *,
-    rng: random.Random,
-    instance_type: str,
-    depot_count: int,
-    customer_count: int,
-    width: float,
-    height: float,
-) -> tuple[list[Point], list[Point]]:
-    if instance_type == "random":
-        depots = generate_random_depots(rng, depot_count, width, height)
-        customers = generate_random_customers(rng, customer_count, width, height)
-        return depots, customers
-
-    if instance_type == "clustered":
-        depots = generate_random_depots(rng, depot_count, width, height)
-        customers = generate_clustered_customers(rng, customer_count, width, height)
-        return depots, customers
-
-    if instance_type == "grid":
-        depots = generate_random_depots(rng, depot_count, width, height)
-        customers = generate_grid_customers(rng, customer_count, width, height)
-        return depots, customers
-
-    if instance_type == "adversarial":
-        depots = generate_adversarial_depots(rng, depot_count, width, height)
-        customers = generate_adversarial_customers(rng, customer_count, width, height)
-        return depots, customers
-
-    if instance_type == "line":
-        depots = generate_random_depots(rng, depot_count, width, height)
-        customers = generate_line_customers(rng, customer_count, width, height)
-        return depots, customers
-
-    raise ValueError(f"unsupported instance_type: {instance_type}")
-
-
-def build_instance_payload(
-    *,
-    instance_name: str,
-    instance_type: str,
+def build_instance_json(
+    name: str,
     seed: int,
-    depot_count: int,
-    customer_count: int,
-    width: float,
-    height: float,
-    return_to_depot: bool,
+    depots_xy: list[tuple[float, float]],
+    customers_xy: list[tuple[float, float]],
+    salesmen_per_depot: list[int],
+    family: str,
 ) -> dict:
-    rng = random.Random(seed)
+    depots = []
+    customers = []
 
-    total_salesmen = choose_total_salesmen(
-        rng=rng,
-        customer_count=customer_count,
-        depot_count=depot_count,
-    )
-    salesmen_per_depot = distribute_salesmen_across_depots(
-        rng=rng,
-        depot_count=depot_count,
-        total_salesmen=total_salesmen,
-    )
-
-    depot_points, customer_points = generate_points_for_instance(
-        rng=rng,
-        instance_type=instance_type,
-        depot_count=depot_count,
-        customer_count=customer_count,
-        width=width,
-        height=height,
-    )
-
-    depots: list[Depot] = []
-    customers: list[Customer] = []
-
-    next_node_id = 0
-
-    for depot_index, point in enumerate(depot_points):
+    for depot_id, ((x, y), salesmen) in enumerate(zip(depots_xy, salesmen_per_depot, strict=True)):
         depots.append(
-            Depot(
-                id=next_node_id,
-                x=point.x,
-                y=point.y,
-                salesmen=salesmen_per_depot[depot_index],
-            )
+            {
+                "id": depot_id,
+                "x": round(x, 6),
+                "y": round(y, 6),
+                "salesmen": int(salesmen),
+            }
         )
-        next_node_id += 1
 
-    for point in customer_points:
+    next_id = len(depots_xy)
+    for idx, (x, y) in enumerate(customers_xy):
         customers.append(
-            Customer(
-                id=next_node_id,
-                x=point.x,
-                y=point.y,
-            )
+            {
+                "id": next_id + idx,
+                "x": round(x, 6),
+                "y": round(y, 6),
+            }
         )
-        next_node_id += 1
 
     return {
-        "name": instance_name,
+        "name": name,
         "type": "euclidean",
-        "instance_type": instance_type,
-        "seed": seed,
-        "return_to_depot": return_to_depot,
-        "depots": [asdict(depot) for depot in depots],
-        "customers": [asdict(customer) for customer in customers],
+        "seed": int(seed),
+        "distribution": "adversarial",
+        "adversarial_family": family,
+        "depots": depots,
+        "customers": customers,
     }
 
 
-def total_salesmen_from_payload(payload: dict) -> int:
-    return sum(int(depot["salesmen"]) for depot in payload["depots"])
+def gen_overlapping_cluster(spec: InstanceSpec) -> tuple[list[tuple[float, float]], list[tuple[float, float]], list[int]]:
+    rng = random.Random(spec.seed)
+
+    centers = [
+        (0.0, 0.0),
+        (110.0, 20.0),
+        (55.0, 80.0),
+    ]
+    sigmas = [28.0, 32.0, 26.0]
+    weights = [0.40, 0.34, 0.26]
+
+    customers: list[tuple[float, float]] = []
+    for _ in range(spec.customers):
+        u = rng.random()
+        acc = 0.0
+        cluster = 0
+        for i, w in enumerate(weights):
+            acc += w
+            if u <= acc:
+                cluster = i
+                break
+        x, y = sample_gaussian_point(rng, centers[cluster][0], centers[cluster][1], sigmas[cluster])
+
+        if rng.random() < 0.12:
+            mix = (cluster + rng.randint(1, 2)) % 3
+            x2, y2 = sample_gaussian_point(rng, centers[mix][0], centers[mix][1], sigmas[mix] * 0.85)
+            x = 0.55 * x + 0.45 * x2
+            y = 0.55 * y + 0.45 * y2
+
+        customers.append((x, y))
+
+    depots = [
+        (-25.0, -10.0),
+        (130.0, 8.0),
+        (48.0, 108.0),
+        (55.0, 35.0),
+    ][: spec.depots]
+
+    depot_bias = [1.0, 1.0, 1.0, 1.5][: spec.depots]
+    salesmen = allocate_salesmen(rng, spec.depots, spec.salesmen, depot_bias)
+
+    depots = normalize_points(depots)
+    customers = normalize_points(customers)
+    return depots, customers, salesmen
 
 
-def file_name_for_instance(
-    spec: GroupSpec,
-    local_index: int,
-    depot_count: int,
-    total_salesmen: int,
-    instance_type: str,
-) -> str:
-    return (
-        f"g{spec.group_id:02d}"
-        f"_i{local_index:02d}"
-        f"_c{spec.customers}"
-        f"_d{depot_count}"
-        f"_m{total_salesmen}"
-        f"_{instance_type}"
-        ".json"
-    )
+def gen_bridge_line(spec: InstanceSpec) -> tuple[list[tuple[float, float]], list[tuple[float, float]], list[int]]:
+    rng = random.Random(spec.seed)
+
+    left_center = (-140.0, 0.0)
+    right_center = (140.0, 0.0)
+
+    customers: list[tuple[float, float]] = []
+
+    left_n = int(spec.customers * 0.38)
+    right_n = int(spec.customers * 0.38)
+    bridge_n = int(spec.customers * 0.18)
+    line_n = spec.customers - left_n - right_n - bridge_n
+
+    for _ in range(left_n):
+        customers.append(sample_gaussian_point(rng, left_center[0], left_center[1], 22.0))
+    for _ in range(right_n):
+        customers.append(sample_gaussian_point(rng, right_center[0], right_center[1], 22.0))
+    for _ in range(bridge_n):
+        customers.append(sample_segment_point(rng, -90.0, -10.0, 90.0, 10.0, 6.0))
+    for _ in range(line_n):
+        customers.append(sample_segment_point(rng, -175.0, 55.0, 175.0, -55.0, 4.0))
+
+    depots = [
+        (-175.0, -45.0),
+        (175.0, 45.0),
+        (0.0, 70.0),
+        (0.0, -70.0),
+    ][: spec.depots]
+
+    depot_bias = [1.4, 1.4, 0.8, 0.8][: spec.depots]
+    salesmen = allocate_salesmen(rng, spec.depots, spec.salesmen, depot_bias)
+
+    depots = normalize_points(depots)
+    customers = normalize_points(customers)
+    return depots, customers, salesmen
 
 
-def instance_name_for_instance(
-    spec: GroupSpec,
-    local_index: int,
-    depot_count: int,
-    total_salesmen: int,
-    instance_type: str,
-) -> str:
-    return (
-        f"group_{spec.group_id:02d}"
-        f"_instance_{local_index:02d}"
-        f"_customers_{spec.customers}"
-        f"_depots_{depot_count}"
-        f"_salesmen_{total_salesmen}"
-        f"_{instance_type}"
-    )
+def gen_asymmetric_depot(spec: InstanceSpec) -> tuple[list[tuple[float, float]], list[tuple[float, float]], list[int]]:
+    rng = random.Random(spec.seed)
+
+    centers = [
+        (-60.0, -15.0),
+        (25.0, 30.0),
+        (105.0, 0.0),
+        (35.0, -75.0),
+    ]
+    weights = [0.46, 0.22, 0.18, 0.14]
+
+    customers: list[tuple[float, float]] = []
+    for _ in range(spec.customers):
+        u = rng.random()
+        acc = 0.0
+        cluster = 0
+        for i, w in enumerate(weights):
+            acc += w
+            if u <= acc:
+                cluster = i
+                break
+        sigma = 18.0 if cluster == 0 else 14.0
+        customers.append(sample_gaussian_point(rng, centers[cluster][0], centers[cluster][1], sigma))
+
+    depots = [
+        (-120.0, -95.0),
+        (130.0, 85.0),
+        (145.0, -85.0),
+        (5.0, 110.0),
+        (-20.0, 70.0),
+    ][: spec.depots]
+
+    depot_bias = [3.2, 0.8, 0.7, 0.7, 1.0][: spec.depots]
+    salesmen = allocate_salesmen(rng, spec.depots, spec.salesmen, depot_bias)
+
+    depots = normalize_points(depots)
+    customers = normalize_points(customers)
+    return depots, customers, salesmen
 
 
-def write_json(path: Path, payload: dict, pretty: bool) -> None:
+def gen_mixed_density(spec: InstanceSpec) -> tuple[list[tuple[float, float]], list[tuple[float, float]], list[int]]:
+    rng = random.Random(spec.seed)
+
+    customers: list[tuple[float, float]] = []
+
+    dense_n = int(spec.customers * 0.55)
+    medium_n = int(spec.customers * 0.28)
+    sparse_n = spec.customers - dense_n - medium_n
+
+    for _ in range(dense_n):
+        customers.append(sample_gaussian_point(rng, -30.0, 20.0, 8.0))
+    for _ in range(medium_n):
+        customers.append(sample_gaussian_point(rng, 80.0, -10.0, 28.0))
+    for _ in range(sparse_n):
+        customers.append((rng.uniform(-160.0, 160.0), rng.uniform(-120.0, 120.0)))
+
+    depots = [
+        (-70.0, -40.0),
+        (110.0, 20.0),
+        (5.0, 95.0),
+        (150.0, -70.0),
+    ][: spec.depots]
+
+    depot_bias = [1.6, 1.2, 0.9, 0.8][: spec.depots]
+    salesmen = allocate_salesmen(rng, spec.depots, spec.salesmen, depot_bias)
+
+    depots = normalize_points(depots)
+    customers = normalize_points(customers)
+    return depots, customers, salesmen
+
+
+def gen_outlier_heavy(spec: InstanceSpec) -> tuple[list[tuple[float, float]], list[tuple[float, float]], list[int]]:
+    rng = random.Random(spec.seed)
+
+    customers: list[tuple[float, float]] = []
+
+    core_n = int(spec.customers * 0.72)
+    near_outlier_n = int(spec.customers * 0.14)
+    far_outlier_n = spec.customers - core_n - near_outlier_n
+
+    for _ in range(core_n):
+        customers.append(sample_gaussian_point(rng, 0.0, 0.0, 22.0))
+    for _ in range(near_outlier_n):
+        customers.append(sample_disc_point(rng, 0.0, 0.0, 145.0))
+    for _ in range(far_outlier_n):
+        angle = rng.uniform(0.0, 2.0 * math.pi)
+        radius = rng.uniform(220.0, 310.0)
+        customers.append((radius * math.cos(angle), radius * math.sin(angle)))
+
+    depots = [
+        (-35.0, -25.0),
+        (40.0, 20.0),
+        (0.0, 85.0),
+        (0.0, -95.0),
+    ][: spec.depots]
+
+    depot_bias = [1.1, 1.1, 0.9, 0.9][: spec.depots]
+    salesmen = allocate_salesmen(rng, spec.depots, spec.salesmen, depot_bias)
+
+    depots = normalize_points(depots)
+    customers = normalize_points(customers)
+    return depots, customers, salesmen
+
+
+GENERATORS: dict[str, Callable[[InstanceSpec], tuple[list[tuple[float, float]], list[tuple[float, float]], list[int]]]] = {
+    "overlapping_cluster": gen_overlapping_cluster,
+    "bridge_line": gen_bridge_line,
+    "asymmetric_depot": gen_asymmetric_depot,
+    "mixed_density": gen_mixed_density,
+    "outlier_heavy": gen_outlier_heavy,
+}
+
+
+def next_group03_index(output_dir: Path) -> int:
+    pattern = re.compile(r"^g03_i(\d+)_")
+    max_seen = 0
+    if output_dir.exists():
+        for path in output_dir.glob("g03_i*.json"):
+            match = pattern.match(path.name)
+            if match:
+                max_seen = max(max_seen, int(match.group(1)))
+    return max_seen + 1
+
+
+def make_specs(base_seed: int, customers: int) -> list[InstanceSpec]:
+    specs: list[InstanceSpec] = []
+    offset = 0
+
+    family_depot_salesmen = {
+        "overlapping_cluster": [(4, 12), (4, 13), (5, 15)],
+        "bridge_line": [(4, 12), (5, 14)],
+        "asymmetric_depot": [(4, 13), (5, 16)],
+        "mixed_density": [(4, 12), (5, 14)],
+        "outlier_heavy": [(4, 12), (4, 13), (5, 15)],
+    }
+
+    for family, count in COUNTS.items():
+        variants = family_depot_salesmen[family]
+        for i in range(count):
+            depots, salesmen = variants[i % len(variants)]
+            specs.append(
+                InstanceSpec(
+                    family=family,
+                    customers=customers,
+                    depots=depots,
+                    salesmen=salesmen,
+                    seed=base_seed + offset,
+                )
+            )
+            offset += 1
+
+    return specs
+
+
+def write_instance(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-
-    with path.open("w", encoding="utf-8") as handle:
-        if pretty:
-            json.dump(payload, handle, ensure_ascii=False, indent=2)
-            handle.write("\n")
-        else:
-            json.dump(payload, handle, ensure_ascii=False, separators=(",", ":"))
-
-
-def generate_all_instances(
-    *,
-    output_dir: Path,
-    master_seed: int,
-    width: float,
-    height: float,
-    return_to_depot: bool,
-    pretty: bool,
-) -> list[Path]:
-    if width <= 0.0 or height <= 0.0:
-        raise ValueError("width and height must be positive")
-
-    master_rng = random.Random(master_seed)
-    written_files: list[Path] = []
-
-    for spec in DEFAULT_SPECS:
-        group_dir = output_dir / f"group_{spec.group_id:02d}"
-
-        for local_index in range(1, spec.instance_count + 1):
-            depot_count = choose_depot_count(master_rng, spec)
-            instance_seed = master_rng.randint(0, 2**31 - 1)
-
-            if spec.special_types:
-                instance_type = spec.special_types[local_index - 1]
-            else:
-                instance_type = "random"
-
-            payload = build_instance_payload(
-                instance_name="temporary",
-                instance_type=instance_type,
-                seed=instance_seed,
-                depot_count=depot_count,
-                customer_count=spec.customers,
-                width=width,
-                height=height,
-                return_to_depot=return_to_depot,
-            )
-
-            total_salesmen = total_salesmen_from_payload(payload)
-            instance_name = instance_name_for_instance(
-                spec=spec,
-                local_index=local_index,
-                depot_count=depot_count,
-                total_salesmen=total_salesmen,
-                instance_type=instance_type,
-            )
-            file_name = file_name_for_instance(
-                spec=spec,
-                local_index=local_index,
-                depot_count=depot_count,
-                total_salesmen=total_salesmen,
-                instance_type=instance_type,
-            )
-
-            payload["name"] = instance_name
-
-            output_path = group_dir / file_name
-            write_json(output_path, payload, pretty)
-            written_files.append(output_path)
-
-    return written_files
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def main() -> int:
-    args = parse_args()
-    return_to_depot = not args.open_routes
+    parser = argparse.ArgumentParser(
+        description="Generate 40 adversarial MDMTSP instances for instances/research/group_03"
+    )
+    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument("--base-seed", type=int, default=203600)
+    parser.add_argument("--customers", type=int, default=DEFAULT_CUSTOMERS)
+    parser.add_argument("--dry-run", action="store_true")
+    args = parser.parse_args()
 
-    try:
-        written_files = generate_all_instances(
-            output_dir=args.output_dir,
-            master_seed=args.master_seed,
-            width=args.width,
-            height=args.height,
-            return_to_depot=return_to_depot,
-            pretty=args.pretty,
+    if args.customers < 50:
+        raise SystemExit("--customers must be at least 50")
+
+    start_index = next_group03_index(args.output_dir)
+    specs = make_specs(args.base_seed, args.customers)
+
+    created = []
+
+    for local_idx, spec in enumerate(specs, start=0):
+        file_idx = start_index + local_idx
+        name = (
+            f"{GROUP_PREFIX}_i{file_idx:02d}_"
+            f"c{spec.customers}_d{spec.depots}_m{spec.salesmen}_adversarial"
         )
-    except Exception as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
+        filename = f"{name}.json"
 
-    print(f"generated files: {len(written_files)}")
-    print(f"output dir: {args.output_dir}")
+        depots_xy, customers_xy, salesmen_per_depot = GENERATORS[spec.family](spec)
+        payload = build_instance_json(
+            name=name,
+            seed=spec.seed,
+            depots_xy=depots_xy,
+            customers_xy=customers_xy,
+            salesmen_per_depot=salesmen_per_depot,
+            family=spec.family,
+        )
+
+        output_path = args.output_dir / filename
+        created.append((output_path, spec.family, spec.seed))
+
+        if not args.dry_run:
+            write_instance(output_path, payload)
+
+    print(f"output_dir: {args.output_dir}")
+    print(f"created_instances: {len(created)}")
+    print(f"start_index: {start_index:02d}")
+    print(f"customers_per_instance: {args.customers}")
+    print("families:")
+    for family, count in COUNTS.items():
+        print(f"  {family}: {count}")
+
+    for path, family, seed in created:
+        print(f"  wrote: {path}  family={family} seed={seed}")
+
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())
