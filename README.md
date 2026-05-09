@@ -1,4 +1,34 @@
 # MDMTSP-HSE-RESEARCH
+
+<!-- AUTO_STATS_START -->
+
+## Research Statistics
+
+- Total run artifacts: `1,863`
+- Unique instances: `142`
+- Unique algorithms: `13`
+- Unique suites: `4`
+- Successful runs: `1,863`
+- Feasible runs: `1,863`
+- Total wall time: `14,675.76 s`
+
+### Best Observed Objective Wins
+
+- `random_insertion`: `64`
+- `lkh_mdmtsp_v5_portfolio`: `61`
+- `lkh_mdmtsp_v4_portfolio`: `14`
+- `cheapest_insertion_vnd`: `3`
+
+### Fastest Runtime Wins
+
+- `nearest_neighbour`: `130`
+- `cheapest_insertion`: `5`
+- `random_insertion`: `3`
+- `nearest_neighbour_2opt`: `2`
+- `nearest_neighbour_2opt_v2`: `2`
+
+<!-- AUTO_STATS_END -->
+
 Исследовательский репозиторий, посвящённый разработке и экспериментальному анализу эвристических алгоритмов решения задачи нескольких коммивояжёров с несколькими депо (MDMTSP).
 
 ### Структура репозитория
