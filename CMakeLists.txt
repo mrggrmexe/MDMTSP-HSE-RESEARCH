@@ -80,6 +80,11 @@ add_library(mdmtsp_core STATIC
     src/mdmtsp/cheapest_insertion_vnd.cpp
     src/mdmtsp/instance_io.cpp
     src/mdmtsp/interroute_local_search.cpp
+    src/mdmtsp/lkh_mdmtsp.cpp
+    src/mdmtsp/lkh_mdmtsp_v2.cpp
+    src/mdmtsp/lkh_mdmtsp_v3.cpp
+    src/mdmtsp/lkh_mdmtsp_v4_portfolio.cpp
+    src/mdmtsp/lkh_mdmtsp_v5_portfolio.cpp
     src/mdmtsp/nearest_neighbour.cpp
     src/mdmtsp/nearest_neighbour_2opt.cpp
     src/mdmtsp/nearest_neighbour_2opt_v2.cpp

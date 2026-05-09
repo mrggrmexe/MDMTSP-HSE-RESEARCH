@@ -124,6 +124,26 @@ std::string canonical_algorithm_id(std::string_view value) {
         return "cheapest_insertion_tabu";
     }
 
+    if (value == "lkh_mdmtsp") {
+        return "lkh_mdmtsp";
+    }
+
+    if (value == "lkh_mdmtsp_v2") {
+        return "lkh_mdmtsp_v2";
+    }
+
+    if (value == "lkh_mdmtsp_v3") {
+        return "lkh_mdmtsp_v3";
+    }
+
+    if (value == "lkh_mdmtsp_v4_portfolio") {
+        return "lkh_mdmtsp_v4_portfolio";
+    }
+
+    if (value == "lkh_mdmtsp_v5_portfolio") {
+        return "lkh_mdmtsp_v5_portfolio";
+    }
+
     throw std::invalid_argument("unsupported algorithm: " + std::string(value));
 }
 
@@ -526,6 +546,26 @@ mdmtsp::MDMTSPSolution solve_with_algorithm(const std::string& algorithm_id,
 
     if (algorithm_id == "cheapest_insertion_tabu") {
         return mdmtsp::solve_mdmtsp_cheapest_insertion_tabu(instance, rng);
+    }
+
+    if (algorithm_id == "lkh_mdmtsp") {
+        return mdmtsp::solve_mdmtsp_lkh_mdmtsp(instance, rng);
+    }
+
+    if (algorithm_id == "lkh_mdmtsp_v2") {
+        return mdmtsp::solve_mdmtsp_lkh_mdmtsp_v2(instance, rng);
+    }
+
+    if (algorithm_id == "lkh_mdmtsp_v3") {
+        return mdmtsp::solve_mdmtsp_lkh_mdmtsp_v3(instance, rng);
+    }
+
+    if (algorithm_id == "lkh_mdmtsp_v4_portfolio") {
+        return mdmtsp::solve_mdmtsp_lkh_mdmtsp_v4_portfolio(instance, rng);
+    }
+
+    if (algorithm_id == "lkh_mdmtsp_v5_portfolio") {
+        return mdmtsp::solve_mdmtsp_lkh_mdmtsp_v5_portfolio(instance, rng);
     }
 
     throw std::invalid_argument("unsupported algorithm: " + algorithm_id);

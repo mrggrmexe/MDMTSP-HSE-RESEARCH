@@ -1,0 +1,81 @@
+{
+  "algorithm": {
+    "id": "lkh_mdmtsp_v4_portfolio",
+    "parameters": {
+      "improve_iterations": 0
+    }
+  },
+  "algorithm_id": "lkh_mdmtsp_v4_portfolio",
+  "customer_count": 10,
+  "depot_count": 2,
+  "execution": {
+    "seed": 42,
+    "timestamp_utc": "2026-05-08T15:48:42Z",
+    "wall_time_ms": 0.612,
+    "wall_time_s": 0.000612,
+    "wall_time_us": 612
+  },
+  "feasible": true,
+  "improve_iterations": 0,
+  "instance": {
+    "customer_count": 10,
+    "depot_count": 2,
+    "name": "group_01_instance_08_customers_10_depots_2_salesmen_2_random",
+    "path": "/Users/mrggrm/Documents/GitHub/MDMTSP-HSE-RESEARCH/instances/research/group_01/g01_i08_c10_d2_m2_random.json",
+    "return_to_depot": true,
+    "salesman_count": 2
+  },
+  "instance_name": "group_01_instance_08_customers_10_depots_2_salesmen_2_random",
+  "instance_path": "/Users/mrggrm/Documents/GitHub/MDMTSP-HSE-RESEARCH/instances/research/group_01/g01_i08_c10_d2_m2_random.json",
+  "objective": 2945.776395409726,
+  "result": {
+    "feasible": true,
+    "objective": 2945.776395409726,
+    "route_count": 2,
+    "status": "ok"
+  },
+  "return_to_depot": true,
+  "route_count": 2,
+  "routes": [
+    {
+      "depot_id": 0,
+      "nodes": [
+        0,
+        9,
+        11,
+        5,
+        8,
+        4,
+        6,
+        10,
+        7,
+        0
+      ],
+      "salesman_id": 0
+    },
+    {
+      "depot_id": 1,
+      "nodes": [
+        1,
+        2,
+        3,
+        1
+      ],
+      "salesman_id": 1
+    }
+  ],
+  "run_id": "20260508T154842Z__research_until_25000__lkh_mdmtsp_v4_portfolio__g01_i08_c10_d2_m2_random__seed_42__fd1cc0b522b6",
+  "salesman_count": 2,
+  "schema_version": 2,
+  "seed": 42,
+  "source": {
+    "instance_path": "/Users/mrggrm/Documents/GitHub/MDMTSP-HSE-RESEARCH/instances/research/group_01/g01_i08_c10_d2_m2_random.json",
+    "mode": "instance_file"
+  },
+  "status": "ok",
+  "suite_name": "research_until_25000",
+  "timestamp_utc": "2026-05-08T15:48:42Z",
+  "wall_time_ms": 0.612,
+  "wall_time_s": 0.000612,
+  "wall_time_us": 612
+}

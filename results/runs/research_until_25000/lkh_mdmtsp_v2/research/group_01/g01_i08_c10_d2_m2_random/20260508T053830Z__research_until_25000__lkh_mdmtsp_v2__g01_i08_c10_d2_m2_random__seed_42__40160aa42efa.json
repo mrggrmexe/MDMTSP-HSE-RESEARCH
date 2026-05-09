@@ -1,0 +1,81 @@
+{
+  "algorithm": {
+    "id": "lkh_mdmtsp_v2",
+    "parameters": {
+      "improve_iterations": 0
+    }
+  },
+  "algorithm_id": "lkh_mdmtsp_v2",
+  "customer_count": 10,
+  "depot_count": 2,
+  "execution": {
+    "seed": 42,
+    "timestamp_utc": "2026-05-08T05:38:30Z",
+    "wall_time_ms": 0.09,
+    "wall_time_s": 9e-05,
+    "wall_time_us": 90
+  },
+  "feasible": true,
+  "improve_iterations": 0,
+  "instance": {
+    "customer_count": 10,
+    "depot_count": 2,
+    "name": "group_01_instance_08_customers_10_depots_2_salesmen_2_random",
+    "path": "/Users/mrggrm/Documents/GitHub/MDMTSP-HSE-RESEARCH/instances/research/group_01/g01_i08_c10_d2_m2_random.json",
+    "return_to_depot": true,
+    "salesman_count": 2
+  },
+  "instance_name": "group_01_instance_08_customers_10_depots_2_salesmen_2_random",
+  "instance_path": "/Users/mrggrm/Documents/GitHub/MDMTSP-HSE-RESEARCH/instances/research/group_01/g01_i08_c10_d2_m2_random.json",
+  "objective": 3817.9561351814014,
+  "result": {
+    "feasible": true,
+    "objective": 3817.9561351814014,
+    "route_count": 2,
+    "status": "ok"
+  },
+  "return_to_depot": true,
+  "route_count": 2,
+  "routes": [
+    {
+      "depot_id": 0,
+      "nodes": [
+        0,
+        8,
+        4,
+        6,
+        10,
+        7,
+        0
+      ],
+      "salesman_id": 0
+    },
+    {
+      "depot_id": 1,
+      "nodes": [
+        1,
+        3,
+        2,
+        9,
+        11,
+        5,
+        1
+      ],
+      "salesman_id": 1
+    }
+  ],
+  "run_id": "20260508T053830Z__research_until_25000__lkh_mdmtsp_v2__g01_i08_c10_d2_m2_random__seed_42__40160aa42efa",
+  "salesman_count": 2,
+  "schema_version": 2,
+  "seed": 42,
+  "source": {
+    "instance_path": "/Users/mrggrm/Documents/GitHub/MDMTSP-HSE-RESEARCH/instances/research/group_01/g01_i08_c10_d2_m2_random.json",
+    "mode": "instance_file"
+  },
+  "status": "ok",
+  "suite_name": "research_until_25000",
+  "timestamp_utc": "2026-05-08T05:38:30Z",
+  "wall_time_ms": 0.09,
+  "wall_time_s": 9e-05,
+  "wall_time_us": 90
+}

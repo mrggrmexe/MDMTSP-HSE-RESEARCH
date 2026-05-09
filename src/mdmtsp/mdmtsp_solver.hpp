@@ -59,4 +59,29 @@ public:
     Random& rng
 );
 
+[[nodiscard]] MDMTSPSolution solve_mdmtsp_lkh_mdmtsp(
+    const MDMTSPInstance& instance,
+    Random& rng
+);
+
+[[nodiscard]] MDMTSPSolution solve_mdmtsp_lkh_mdmtsp_v2(
+    const MDMTSPInstance& instance,
+    Random& rng
+);
+
+[[nodiscard]] MDMTSPSolution solve_mdmtsp_lkh_mdmtsp_v3(
+    const MDMTSPInstance& instance,
+    Random& rng
+);
+
+[[nodiscard]] MDMTSPSolution solve_mdmtsp_lkh_mdmtsp_v4_portfolio(
+    const MDMTSPInstance& instance,
+    Random& rng
+);
+
+[[nodiscard]] MDMTSPSolution solve_mdmtsp_lkh_mdmtsp_v5_portfolio(
+    const MDMTSPInstance& instance,
+    Random& rng
+);
+
 }  // namespace mdmtsp
