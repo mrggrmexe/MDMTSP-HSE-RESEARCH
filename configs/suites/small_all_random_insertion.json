@@ -14,6 +14,16 @@
   "improve_iterations": 0,
   "algorithms": [
     "random_insertion",
-    "cheapest_insertion"
+    "cheapest_insertion",
+    "nearest_neighbour_2opt",
+    "nearest_neighbour_2opt_v2",
+    "cheapest_insertion_2opt",
+    "cheapest_insertion_vnd",
+    "cheapest_insertion_tabu",
+    "lkh_mdmtsp",
+    "lkh_mdmtsp_v2",
+    "lkh_mdmtsp_v3",
+    "lkh_mdmtsp_v4_portfolio",
+    "lkh_mdmtsp_v5_portfolio"
   ]
 }

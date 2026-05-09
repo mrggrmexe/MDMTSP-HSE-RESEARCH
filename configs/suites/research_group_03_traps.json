@@ -1,0 +1,30 @@
+{
+  "suite_name": "research_group_03_traps",
+  "description": "Trap-style stress set for insertion heuristics",
+  "algorithms": [
+    "nearest_neighbour",
+    "random_insertion",
+    "cheapest_insertion",
+    "nearest_neighbour_2opt",
+    "nearest_neighbour_2opt_v2",
+    "cheapest_insertion_2opt",
+    "cheapest_insertion_vnd",
+    "cheapest_insertion_tabu",
+    "lkh_mdmtsp",
+    "lkh_mdmtsp_v2",
+    "lkh_mdmtsp_v3",
+    "lkh_mdmtsp_v4_portfolio",
+    "lkh_mdmtsp_v5_portfolio"
+  ],
+  "instance_roots": [
+    "instances/research/group_03_traps"
+  ],
+  "include_globs": [
+    "*.json"
+  ],
+  "exclude_globs": [],
+  "seeds": [
+    42
+  ],
+  "improve_iterations": 0
+}

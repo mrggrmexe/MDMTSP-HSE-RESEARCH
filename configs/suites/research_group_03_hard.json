@@ -1,0 +1,24 @@
+{
+  "suite_name": "research_group_03_hard",
+  "description": "Hard adversarial group 03 instances",
+  "algorithms": [
+    "nearest_neighbour_2opt",
+    "nearest_neighbour_2opt_v2",
+    "lkh_mdmtsp",
+    "lkh_mdmtsp_v2",
+    "lkh_mdmtsp_v3",
+    "lkh_mdmtsp_v4_portfolio",
+    "lkh_mdmtsp_v5_portfolio"
+  ],
+  "instance_roots": [
+    "instances/research/group_03_hard"
+  ],
+  "include_globs": [
+    "*.json"
+  ],
+  "exclude_globs": [],
+  "seeds": [
+    42
+  ],
+  "improve_iterations": 0
+}

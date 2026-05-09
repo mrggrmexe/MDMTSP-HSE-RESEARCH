@@ -54,6 +54,70 @@ WARNING_PATTERNS = (
     re.compile(r"\bdeprecated\b", re.IGNORECASE),
 )
 
+GROUP_LONG_PATTERN = re.compile(r"group_(\d+)")
+GROUP_SHORT_PATTERN = re.compile(r"^g(\d+)([a-zA-Z]*)_")
+
+
+def natural_group_key(value: str) -> tuple[int, int, str]:
+    value = value or ""
+
+    short_match = GROUP_SHORT_PATTERN.search(value)
+    if short_match:
+        number = int(short_match.group(1))
+        short_suffix = short_match.group(2)
+
+        short_suffix_map = {
+            "": "",
+            "h": "hard",
+            "t": "traps",
+        }
+        suffix_token = short_suffix_map.get(short_suffix, short_suffix)
+
+        suffix_priority = {
+            "": 0,
+            "hard": 1,
+            "traps": 2,
+            "trap": 2,
+        }
+
+        return (
+            number,
+            suffix_priority.get(suffix_token, 999),
+            suffix_token,
+        )
+
+    long_match = GROUP_LONG_PATTERN.search(value)
+    if long_match:
+        number = int(long_match.group(1))
+
+        suffix_token = ""
+        if "_hard" in value:
+            suffix_token = "hard"
+        elif "_traps" in value or "_trap" in value:
+            suffix_token = "traps"
+
+        suffix_priority = {
+            "": 0,
+            "hard": 1,
+            "traps": 2,
+        }
+
+        return (
+            number,
+            suffix_priority.get(suffix_token, 999),
+            suffix_token,
+        )
+
+    return (10**9, 999, value)
+
+
+def instance_sort_key(instance_name: str, customer_count: int | None) -> tuple[tuple[int, int, str], int, str]:
+    return (
+        natural_group_key(instance_name),
+        customer_count if customer_count is not None else -1,
+        instance_name,
+    )
+
 
 @dataclass(slots=True)
 class ParseIssue:
@@ -727,7 +791,13 @@ def summarize_instances(run_rows: Sequence[dict[str, Any]], context: SummaryCont
         grouped[str(row["instance_name"])].append(row)
 
     output: list[dict[str, Any]] = []
-    for instance_name, rows in sorted(grouped.items(), key=lambda item: (as_int(item[1][0].get("customer_count")) or -1, item[0])):
+    for instance_name, rows in sorted(
+        grouped.items(),
+        key=lambda item: instance_sort_key(
+            item[0],
+            as_int(item[1][0].get("customer_count")),
+        ),
+    ):
         objective_rows = [row for row in rows if row.get("objective") is not None and row.get("is_feasible_success")]
         runtime_rows = [row for row in rows if row.get("wall_time_ms") is not None and row.get("is_success")]
         best_objective = context.best_objective_by_instance.get(instance_name)
@@ -791,7 +861,16 @@ def summarize_algorithm_instance(run_rows: Sequence[dict[str, Any]], context: Su
         grouped[(str(row["algorithm_id"]), str(row["instance_name"]))].append(row)
 
     output: list[dict[str, Any]] = []
-    for (algorithm_id, instance_name), rows in sorted(grouped.items(), key=lambda item: ((as_int(item[1][0].get("customer_count")) or -1), item[0][1], item[0][0])):
+    for (algorithm_id, instance_name), rows in sorted(
+        grouped.items(),
+        key=lambda item: (
+            instance_sort_key(
+                item[0][1],
+                as_int(item[1][0].get("customer_count")),
+            ),
+            item[0][0],
+        ),
+    ):
         objective_rows = [row for row in rows if row.get("objective") is not None and row.get("is_feasible_success")]
         gaps = [as_float(row.get("gap_to_best_observed")) for row in objective_rows if as_float(row.get("gap_to_best_observed")) is not None]
         time_ratios = [as_float(row.get("time_ratio_to_fastest")) for row in rows if as_float(row.get("time_ratio_to_fastest")) is not None and row.get("is_success")]
@@ -888,7 +967,13 @@ def build_baseline_matrix(run_rows: Sequence[dict[str, Any]], algorithms: Sequen
     output: list[dict[str, Any]] = []
     ordered_algorithms = list(sorted(set(algorithms)))
 
-    for instance_name, rows in sorted(grouped.items(), key=lambda item: ((as_int(item[1][0].get("customer_count")) or -1), item[0])):
+    for instance_name, rows in sorted(
+        grouped.items(),
+        key=lambda item: instance_sort_key(
+            item[0],
+            as_int(item[1][0].get("customer_count")),
+        ),
+    ):
         base: dict[str, Any] = {
             "instance_name": instance_name,
             "instance_type": as_str(rows[0].get("instance_type")),
@@ -1483,6 +1568,25 @@ def main() -> int:
     )
 
     write_workbook(bundle, output_path, repo_root)
+
+    algorithm_instance_summary_csv = repo_root / "results" / "tables" / "algorithm_instance_summary.csv"
+    instance_summary_csv = repo_root / "results" / "tables" / "instance_summary.csv"
+
+    if algorithm_instance_summary_csv.exists():
+        try:
+            from excel_heatmaps import add_heatmap_sheets_to_workbook
+        except ImportError as exc:
+            print(
+                f"warning: heatmap sheets skipped because optional dependency is missing: {exc}",
+                file=sys.stderr,
+            )
+        else:
+            add_heatmap_sheets_to_workbook(
+                workbook_path=output_path,
+                algorithm_instance_summary_csv=algorithm_instance_summary_csv,
+                instance_summary_csv=instance_summary_csv if instance_summary_csv.exists() else None,
+            )
+
     print(f"excel report saved to {output_path}")
     print(
         f"runs={len(bundle.runs)} algorithms={len(bundle.algorithms)} instances={len(bundle.instances)} failures={len(bundle.failures)} parse_issues={len(bundle.parse_issues)}"

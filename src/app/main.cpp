@@ -104,6 +104,46 @@ std::string canonical_algorithm_id(std::string_view value) {
         return "cheapest_insertion";
     }
 
+    if (value == "nearest_neighbour_2opt") {
+        return "nearest_neighbour_2opt";
+    }
+
+    if (value == "nearest_neighbour_2opt_v2") {
+        return "nearest_neighbour_2opt_v2";
+    }
+
+    if (value == "cheapest_insertion_2opt") {
+        return "cheapest_insertion_2opt";
+    }
+
+    if (value == "cheapest_insertion_vnd") {
+        return "cheapest_insertion_vnd";
+    }
+
+    if (value == "cheapest_insertion_tabu") {
+        return "cheapest_insertion_tabu";
+    }
+
+    if (value == "lkh_mdmtsp") {
+        return "lkh_mdmtsp";
+    }
+
+    if (value == "lkh_mdmtsp_v2") {
+        return "lkh_mdmtsp_v2";
+    }
+
+    if (value == "lkh_mdmtsp_v3") {
+        return "lkh_mdmtsp_v3";
+    }
+
+    if (value == "lkh_mdmtsp_v4_portfolio") {
+        return "lkh_mdmtsp_v4_portfolio";
+    }
+
+    if (value == "lkh_mdmtsp_v5_portfolio") {
+        return "lkh_mdmtsp_v5_portfolio";
+    }
+
     throw std::invalid_argument("unsupported algorithm: " + std::string(value));
 }
 
@@ -486,6 +526,46 @@ mdmtsp::MDMTSPSolution solve_with_algorithm(const std::string& algorithm_id,
 
     if (algorithm_id == "cheapest_insertion") {
         return mdmtsp::solve_mdmtsp_cheapest_insertion(instance, rng);
+    }
+
+    if (algorithm_id == "nearest_neighbour_2opt") {
+        return mdmtsp::solve_mdmtsp_nearest_neighbour_2opt(instance, rng);
+    }
+
+    if (algorithm_id == "nearest_neighbour_2opt_v2") {
+        return mdmtsp::solve_mdmtsp_nearest_neighbour_2opt_v2(instance, rng);
+    }
+
+    if (algorithm_id == "cheapest_insertion_2opt") {
+        return mdmtsp::solve_mdmtsp_cheapest_insertion_2opt(instance, rng);
+    }
+
+    if (algorithm_id == "cheapest_insertion_vnd") {
+        return mdmtsp::solve_mdmtsp_cheapest_insertion_vnd(instance, rng);
+    }
+
+    if (algorithm_id == "cheapest_insertion_tabu") {
+        return mdmtsp::solve_mdmtsp_cheapest_insertion_tabu(instance, rng);
+    }
+
+    if (algorithm_id == "lkh_mdmtsp") {
+        return mdmtsp::solve_mdmtsp_lkh_mdmtsp(instance, rng);
+    }
+
+    if (algorithm_id == "lkh_mdmtsp_v2") {
+        return mdmtsp::solve_mdmtsp_lkh_mdmtsp_v2(instance, rng);
+    }
+
+    if (algorithm_id == "lkh_mdmtsp_v3") {
+        return mdmtsp::solve_mdmtsp_lkh_mdmtsp_v3(instance, rng);
+    }
+
+    if (algorithm_id == "lkh_mdmtsp_v4_portfolio") {
+        return mdmtsp::solve_mdmtsp_lkh_mdmtsp_v4_portfolio(instance, rng);
+    }
+
+    if (algorithm_id == "lkh_mdmtsp_v5_portfolio") {
+        return mdmtsp::solve_mdmtsp_lkh_mdmtsp_v5_portfolio(instance, rng);
     }
 
     throw std::invalid_argument("unsupported algorithm: " + algorithm_id);

@@ -34,4 +34,54 @@ public:
     Random& rng
 );
 
+[[nodiscard]] MDMTSPSolution solve_mdmtsp_nearest_neighbour_2opt(
+    const MDMTSPInstance& instance,
+    Random& rng
+);
+
+[[nodiscard]] MDMTSPSolution solve_mdmtsp_nearest_neighbour_2opt_v2(
+    const MDMTSPInstance& instance,
+    Random& rng
+);
+
+[[nodiscard]] MDMTSPSolution solve_mdmtsp_cheapest_insertion_2opt(
+    const MDMTSPInstance& instance,
+    Random& rng
+);
+
+[[nodiscard]] MDMTSPSolution solve_mdmtsp_cheapest_insertion_vnd(
+    const MDMTSPInstance& instance,
+    Random& rng
+);
+
+[[nodiscard]] MDMTSPSolution solve_mdmtsp_cheapest_insertion_tabu(
+    const MDMTSPInstance& instance,
+    Random& rng
+);
+
+[[nodiscard]] MDMTSPSolution solve_mdmtsp_lkh_mdmtsp(
+    const MDMTSPInstance& instance,
+    Random& rng
+);
+
+[[nodiscard]] MDMTSPSolution solve_mdmtsp_lkh_mdmtsp_v2(
+    const MDMTSPInstance& instance,
+    Random& rng
+);
+
+[[nodiscard]] MDMTSPSolution solve_mdmtsp_lkh_mdmtsp_v3(
+    const MDMTSPInstance& instance,
+    Random& rng
+);
+
+[[nodiscard]] MDMTSPSolution solve_mdmtsp_lkh_mdmtsp_v4_portfolio(
+    const MDMTSPInstance& instance,
+    Random& rng
+);
+
+[[nodiscard]] MDMTSPSolution solve_mdmtsp_lkh_mdmtsp_v5_portfolio(
+    const MDMTSPInstance& instance,
+    Random& rng
+);
+
 }  // namespace mdmtsp
