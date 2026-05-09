@@ -156,6 +156,10 @@ std::string canonical_algorithm_id(std::string_view value) {
         return "hgs_lightweight_v1";
     }
 
+    if (value == "simulated_annealing_v2") {
+        return "simulated_annealing_v2";
+    }
+
     throw std::invalid_argument("unsupported algorithm: " + std::string(value));
 }
 
@@ -590,6 +594,10 @@ mdmtsp::MDMTSPSolution solve_with_algorithm(const std::string& algorithm_id,
 
     if (algorithm_id == "hgs_lightweight_v1") {
         return mdmtsp::solve_mdmtsp_hgs_lightweight_v1(instance, rng);
+    }
+
+    if (algorithm_id == "simulated_annealing_v2") {
+        return mdmtsp::solve_mdmtsp_simulated_annealing_v2(instance, rng);
     }
 
     throw std::invalid_argument("unsupported algorithm: " + algorithm_id);
