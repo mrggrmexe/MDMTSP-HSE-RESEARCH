@@ -80,6 +80,10 @@ add_library(mdmtsp_core STATIC
     src/mdmtsp/cheapest_insertion_vnd.cpp
     src/mdmtsp/hgs_light_weight_v1.cpp
     src/mdmtsp/hgs_lightweight_v1.cpp
+    src/mdmtsp/hgs_lightweight_v2.cpp
+    src/mdmtsp/hgs_lightweight_v3.cpp
+    src/mdmtsp/hgs_lightweight_v4.cpp
+    src/mdmtsp/hgs_lightweight_v5.cpp
     src/mdmtsp/instance_io.cpp
     src/mdmtsp/interroute_local_search.cpp
     src/mdmtsp/lkh_mdmtsp.cpp
@@ -94,6 +98,9 @@ add_library(mdmtsp_core STATIC
     src/mdmtsp/random_insertion.cpp
     src/mdmtsp/simulated_annealing_v1.cpp
     src/mdmtsp/simulated_annealing_v2.cpp
+    src/mdmtsp/simulated_annealing_v3.cpp
+    src/mdmtsp/simulated_annealing_v4.cpp
+    src/mdmtsp/simulated_annealing_v5.cpp
     src/mdmtsp/solution.cpp
     src/mdmtsp/validator.cpp
 )

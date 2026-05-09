@@ -104,4 +104,39 @@ public:
     Random& rng
 );
 
+[[nodiscard]] MDMTSPSolution solve_mdmtsp_simulated_annealing_v3(
+    const MDMTSPInstance& instance,
+    Random& rng
+);
+
+[[nodiscard]] MDMTSPSolution solve_mdmtsp_simulated_annealing_v4(
+    const MDMTSPInstance& instance,
+    Random& rng
+);
+
+[[nodiscard]] MDMTSPSolution solve_mdmtsp_simulated_annealing_v5(
+    const MDMTSPInstance& instance,
+    Random& rng
+);
+
+[[nodiscard]] MDMTSPSolution solve_mdmtsp_hgs_lightweight_v2(
+    const MDMTSPInstance& instance,
+    Random& rng
+);
+
+[[nodiscard]] MDMTSPSolution solve_mdmtsp_hgs_lightweight_v3(
+    const MDMTSPInstance& instance,
+    Random& rng
+);
+
+[[nodiscard]] MDMTSPSolution solve_mdmtsp_hgs_lightweight_v4(
+    const MDMTSPInstance& instance,
+    Random& rng
+);
+
+[[nodiscard]] MDMTSPSolution solve_mdmtsp_hgs_lightweight_v5(
+    const MDMTSPInstance& instance,
+    Random& rng
+);
+
 }  // namespace mdmtsp

@@ -18,7 +18,14 @@
     "simulated_annealing_v1",
     "hgs_light_weight_v1",
     "hgs_lightweight_v1",
-    "simulated_annealing_v2"
+    "simulated_annealing_v2",
+    "simulated_annealing_v3",
+    "simulated_annealing_v4",
+    "simulated_annealing_v5",
+    "hgs_lightweight_v2",
+    "hgs_lightweight_v3",
+    "hgs_lightweight_v4",
+    "hgs_lightweight_v5"
   ],
   "instance_roots": [
     "instances/research/group_01",
