@@ -90,6 +90,7 @@ add_library(mdmtsp_core STATIC
     src/mdmtsp/nearest_neighbour_2opt_v2.cpp
     src/mdmtsp/objective.cpp
     src/mdmtsp/random_insertion.cpp
+    src/mdmtsp/simulated_annealing_v1.cpp
     src/mdmtsp/solution.cpp
     src/mdmtsp/validator.cpp
 )
