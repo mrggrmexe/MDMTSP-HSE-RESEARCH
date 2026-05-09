@@ -16,7 +16,8 @@
     "lkh_mdmtsp_v4_portfolio",
     "lkh_mdmtsp_v5_portfolio",
     "simulated_annealing_v1",
-    "hgs_light_weight_v1"
+    "hgs_light_weight_v1",
+    "hgs_lightweight_v1"
   ],
   "instance_roots": [
     "instances/research/group_03"

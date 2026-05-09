@@ -94,4 +94,9 @@ public:
     Random& rng
 );
 
+[[nodiscard]] MDMTSPSolution solve_mdmtsp_hgs_lightweight_v1(
+    const MDMTSPInstance& instance,
+    Random& rng
+);
+
 }  // namespace mdmtsp

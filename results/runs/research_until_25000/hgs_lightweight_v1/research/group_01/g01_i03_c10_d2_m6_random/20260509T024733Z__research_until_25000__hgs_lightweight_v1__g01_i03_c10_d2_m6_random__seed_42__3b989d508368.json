@@ -1,0 +1,113 @@
+{
+  "algorithm": {
+    "id": "hgs_lightweight_v1",
+    "parameters": {
+      "improve_iterations": 0
+    }
+  },
+  "algorithm_id": "hgs_lightweight_v1",
+  "customer_count": 10,
+  "depot_count": 2,
+  "execution": {
+    "seed": 42,
+    "timestamp_utc": "2026-05-09T02:47:33Z",
+    "wall_time_ms": 6.139,
+    "wall_time_s": 0.006139,
+    "wall_time_us": 6139
+  },
+  "feasible": true,
+  "improve_iterations": 0,
+  "instance": {
+    "customer_count": 10,
+    "depot_count": 2,
+    "name": "group_01_instance_03_customers_10_depots_2_salesmen_6_random",
+    "path": "/Users/mrggrm/Documents/GitHub/MDMTSP-HSE-RESEARCH/instances/research/group_01/g01_i03_c10_d2_m6_random.json",
+    "return_to_depot": true,
+    "salesman_count": 6
+  },
+  "instance_name": "group_01_instance_03_customers_10_depots_2_salesmen_6_random",
+  "instance_path": "/Users/mrggrm/Documents/GitHub/MDMTSP-HSE-RESEARCH/instances/research/group_01/g01_i03_c10_d2_m6_random.json",
+  "objective": 2973.472263507747,
+  "result": {
+    "feasible": true,
+    "objective": 2973.472263507747,
+    "route_count": 6,
+    "status": "ok"
+  },
+  "return_to_depot": true,
+  "route_count": 6,
+  "routes": [
+    {
+      "depot_id": 0,
+      "nodes": [
+        0,
+        10,
+        9,
+        6,
+        7,
+        11,
+        8,
+        3,
+        4,
+        5,
+        2,
+        0
+      ],
+      "salesman_id": 0
+    },
+    {
+      "depot_id": 0,
+      "nodes": [
+        0,
+        0
+      ],
+      "salesman_id": 1
+    },
+    {
+      "depot_id": 0,
+      "nodes": [
+        0,
+        0
+      ],
+      "salesman_id": 2
+    },
+    {
+      "depot_id": 1,
+      "nodes": [
+        1,
+        1
+      ],
+      "salesman_id": 3
+    },
+    {
+      "depot_id": 1,
+      "nodes": [
+        1,
+        1
+      ],
+      "salesman_id": 4
+    },
+    {
+      "depot_id": 1,
+      "nodes": [
+        1,
+        1
+      ],
+      "salesman_id": 5
+    }
+  ],
+  "run_id": "20260509T024733Z__research_until_25000__hgs_lightweight_v1__g01_i03_c10_d2_m6_random__seed_42__3b989d508368",
+  "salesman_count": 6,
+  "schema_version": 2,
+  "seed": 42,
+  "source": {
+    "instance_path": "/Users/mrggrm/Documents/GitHub/MDMTSP-HSE-RESEARCH/instances/research/group_01/g01_i03_c10_d2_m6_random.json",
+    "mode": "instance_file"
+  },
+  "status": "ok",
+  "suite_name": "research_until_25000",
+  "timestamp_utc": "2026-05-09T02:47:33Z",
+  "wall_time_ms": 6.139,
+  "wall_time_s": 0.006139,
+  "wall_time_us": 6139
+}

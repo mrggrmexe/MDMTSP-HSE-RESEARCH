@@ -79,6 +79,7 @@ add_library(mdmtsp_core STATIC
     src/mdmtsp/cheapest_insertion_tabu.cpp
     src/mdmtsp/cheapest_insertion_vnd.cpp
     src/mdmtsp/hgs_light_weight_v1.cpp
+    src/mdmtsp/hgs_lightweight_v1.cpp
     src/mdmtsp/instance_io.cpp
     src/mdmtsp/interroute_local_search.cpp
     src/mdmtsp/lkh_mdmtsp.cpp
