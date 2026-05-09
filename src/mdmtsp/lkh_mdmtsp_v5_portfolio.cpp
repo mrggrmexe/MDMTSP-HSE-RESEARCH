@@ -25,24 +25,28 @@ namespace mdmtsp {
 namespace {
 
 constexpr cost_t kEps = static_cast<cost_t>(1e-9);
-constexpr std::size_t kSmallRouteThreshold = 5;
-constexpr int kClusteringRefinementPasses = 3;
-constexpr int kMaxTwoOptPasses = 6;
+constexpr std::size_t kSmallRouteThreshold = 8;
+constexpr int kClusteringRefinementPasses = 1;
+constexpr int kMaxTwoOptPasses = 2;
 constexpr std::size_t kMinMeaningfulChunkSize = 8;
-constexpr int kSplitRefinementPasses = 4;
-constexpr int kRouteMergePasses = 3;
+constexpr int kSplitRefinementPasses = 1;
+constexpr int kRouteMergePasses = 1;
 constexpr cost_t kBoundedStretchMultiplier = static_cast<cost_t>(1.20);
 constexpr cost_t kBoundedStretchAdditiveScale = static_cast<cost_t>(1.75);
 constexpr cost_t kRouteOpeningPenaltyFactor = static_cast<cost_t>(1.10);
 constexpr std::size_t kExactClusterProxyThreshold = 180;
 constexpr std::size_t kExactRouteThreshold = 12;
 constexpr cost_t kPortfolioSegmentPenaltyFactor = static_cast<cost_t>(0.45);
-constexpr int kBoundaryRefinementPasses = 6;
+constexpr int kBoundaryRefinementPasses = 2;
 constexpr std::size_t kDominantDepotCandidateLimit = 2;
 constexpr std::size_t kSmallInstanceDominantThreshold = 32;
-constexpr std::size_t kAssignmentRefinementCustomerThreshold = 1500;
-constexpr std::size_t kAssignmentNeighborhoodSampleLimit = 24;
-constexpr int kAssignmentGvnsPasses = 3;
+constexpr std::size_t kAssignmentRefinementCustomerThreshold = 120;
+constexpr std::size_t kAssignmentNeighborhoodSampleLimit = 6;
+constexpr int kAssignmentGvnsPasses = 1;
+constexpr std::size_t kLkhMinRouteSize = 24;
+constexpr std::size_t kPortfolioTopPolicies = 2;
+constexpr std::size_t kNeighbourEvaluationBudget = 12;
+constexpr std::size_t kFastSmallInstanceThreshold = 80;
 
 [[nodiscard]] bool improving(const cost_t delta) noexcept {
     return delta < -kEps;
@@ -1199,8 +1203,8 @@ void two_opt_improve_open(Route& route, const DistanceMatrix& matrix) {
     tsp::TSPSolveOptions options;
     options.seed = stable_route_seed(depot_id, customers);
     options.iteration_limit = std::max<std::uint64_t>(
-        200ULL,
-        static_cast<std::uint64_t>(problem.n) * 25ULL
+        48ULL,
+        static_cast<std::uint64_t>(problem.n) * 6ULL
     );
     options.require_finite_costs = true;
     options.require_non_negative_costs = true;
@@ -1579,7 +1583,7 @@ void refine_contiguous_boundaries(
         }
     }
 
-    if (!lkh_enabled || customers.size() < kSmallRouteThreshold) {
+    if (!lkh_enabled || customers.size() < kLkhMinRouteSize) {
         return best_route;
     }
 
@@ -1610,17 +1614,17 @@ void refine_contiguous_boundaries(
 [[nodiscard]] std::size_t recommended_relocation_iterations(
     const std::size_t customer_count
 ) noexcept {
+    if (customer_count <= kFastSmallInstanceThreshold) {
+        return 0;
+    }
     if (customer_count <= 300) {
-        return 32;
-    }
-    if (customer_count <= 1500) {
-        return 16;
-    }
-    if (customer_count <= 5000) {
         return 8;
     }
-    if (customer_count <= 12000) {
-        return 3;
+    if (customer_count <= 1500) {
+        return 4;
+    }
+    if (customer_count <= 5000) {
+        return 2;
     }
     return 0;
 }
@@ -1818,15 +1822,22 @@ struct CandidateSolution {
     const DistanceMatrix& matrix,
     bool& lkh_enabled
 ) {
-    if (solution.feasible) {
-        consolidate_same_depot_routes(solution, instance, matrix, lkh_enabled);
-        reroute_all_routes_with_lkh(solution, instance, matrix, lkh_enabled);
-        solution.objective = compute_objective(solution, instance, matrix);
-        solution.feasible = is_solution_feasible(instance, solution);
-        solution.status = solution.feasible ? "ok" : validation_report(instance, solution);
+    if (!solution.feasible) {
+        return solution;
     }
 
-    const std::size_t relocate_iterations = recommended_relocation_iterations(instance.customer_count());
+    const bool fast_small_mode = instance.customer_count() <= kFastSmallInstanceThreshold;
+
+    consolidate_same_depot_routes(solution, instance, matrix, lkh_enabled);
+    if (!fast_small_mode) {
+        reroute_all_routes_with_lkh(solution, instance, matrix, lkh_enabled);
+    }
+
+    solution.objective = compute_objective(solution, instance, matrix);
+    solution.feasible = is_solution_feasible(instance, solution);
+    solution.status = solution.feasible ? "ok" : validation_report(instance, solution);
+
+    const std::size_t relocate_iterations = fast_small_mode ? 0U : recommended_relocation_iterations(instance.customer_count());
     if (relocate_iterations > 0 && solution.feasible) {
         improve_interroute_by_relocation(solution, instance, relocate_iterations);
         consolidate_same_depot_routes(solution, instance, matrix, lkh_enabled);
@@ -1904,12 +1915,11 @@ struct CandidateSolution {
 }
 
 
-[[nodiscard]] std::array<RouteSplitPolicy, 4> portfolio_split_policies() {
+[[nodiscard]] std::array<RouteSplitPolicy, 3> portfolio_split_policies() {
     return {
         RouteSplitPolicy::LocalBest,
-        RouteSplitPolicy::ClusterSplit,
-        RouteSplitPolicy::PolarOrderSplit,
-        RouteSplitPolicy::NearestChainSplit
+        RouteSplitPolicy::NearestChainSplit,
+        RouteSplitPolicy::ClusterSplit
     };
 }
 
@@ -2173,19 +2183,34 @@ struct CandidateSolution {
     const std::vector<depot_id_t>& customer_to_depot,
     Random& rng
 ) {
-    std::optional<MDMTSPSolution> best;
+    auto grouped_by_depot = group_customers_by_depot(instance, customer_to_depot);
+    const auto salesman_to_depot = expand_salesman_to_depot(salesmen_per_depot);
+
+    std::vector<std::pair<cost_t, RouteSplitPolicy>> ranked;
+    ranked.reserve(portfolio_split_policies().size());
     for (const auto split_policy : portfolio_split_policies()) {
-        auto candidate = build_candidate_solution(
-            instance,
-            matrix,
-            salesmen_per_depot,
-            customer_to_depot,
-            rng,
-            split_policy
+        auto chunks = build_chunks_for_global_policy(
+            instance, grouped_by_depot, salesmen_per_depot, matrix, rng, split_policy
         );
-        if (!candidate.has_value()) {
-            continue;
+        cost_t proxy = 0.0;
+        for (std::size_t s = 0; s < chunks.size() && s < salesman_to_depot.size(); ++s) {
+            proxy += penalized_segment_proxy_cost(instance, chunks[s], salesman_to_depot[s], matrix);
         }
+        ranked.emplace_back(proxy, split_policy);
+    }
+    std::sort(ranked.begin(), ranked.end(), [](const auto& a, const auto& b) {
+        if (a.first != b.first) return a.first < b.first;
+        return static_cast<int>(a.second) < static_cast<int>(b.second);
+    });
+
+    const std::size_t keep = instance.customer_count() <= kFastSmallInstanceThreshold ? 1U : std::min<std::size_t>(kPortfolioTopPolicies, ranked.size());
+
+    std::optional<MDMTSPSolution> best;
+    for (std::size_t i = 0; i < keep; ++i) {
+        auto candidate = build_candidate_solution(
+            instance, matrix, salesmen_per_depot, customer_to_depot, rng, ranked[i].second
+        );
+        if (!candidate.has_value()) continue;
         if (!best.has_value() || solution_better_than(*candidate, *best)) {
             best = std::move(*candidate);
         }
@@ -2206,11 +2231,7 @@ struct AssignmentIncumbent {
     Random& rng
 ) {
     auto incumbent_solution = evaluate_assignment_portfolio(
-        instance,
-        matrix,
-        salesmen_per_depot,
-        start_assignment,
-        rng
+        instance, matrix, salesmen_per_depot, start_assignment, rng
     );
     if (!incumbent_solution.has_value()) {
         return std::nullopt;
@@ -2223,40 +2244,32 @@ struct AssignmentIncumbent {
     }
 
     std::vector<std::vector<std::size_t>> orderings;
-    orderings.push_back(build_customer_order_by_xy(instance));
-    orderings.push_back(build_customer_order_by_yx(instance));
-    orderings.push_back(build_customer_order_by_polar(instance));
     orderings.push_back(build_customer_order_by_nearest_chain(instance, matrix));
+    if (instance.customer_count() > kSmallInstanceDominantThreshold) {
+        orderings.push_back(build_customer_order_by_xy(instance));
+    }
 
-    for (int pass = 0; pass < kAssignmentGvnsPasses; ++pass) {
+    std::size_t eval_budget = instance.customer_count() <= kFastSmallInstanceThreshold ? 6U : kNeighbourEvaluationBudget;
+
+    for (int pass = 0; pass < kAssignmentGvnsPasses && eval_budget > 0; ++pass) {
         bool improved = false;
-
         for (const auto& order : orderings) {
-            for (std::size_t block_size = 1; block_size <= 3; ++block_size) {
-                const auto starts = sampled_block_starts(order.size(), block_size, kAssignmentNeighborhoodSampleLimit);
+            const std::size_t max_block = instance.customer_count() <= kFastSmallInstanceThreshold ? 1U : 2U;
+            for (std::size_t block_size = 1; block_size <= max_block && eval_budget > 0; ++block_size) {
+                const auto starts = sampled_block_starts(order.size(), block_size, instance.customer_count() <= kFastSmallInstanceThreshold ? 3U : kAssignmentNeighborhoodSampleLimit);
                 for (const std::size_t start : starts) {
-                    const std::array<std::vector<depot_id_t>, 3> neighbours{
+                    const std::array<std::vector<depot_id_t>, 2> neighbours{
                         assignment_same_as_previous(incumbent.assignment, order, start, block_size),
-                        assignment_same_as_next(incumbent.assignment, order, start, block_size),
-                        assignment_reverse_block(incumbent.assignment, order, start, block_size)
+                        assignment_same_as_next(incumbent.assignment, order, start, block_size)
                     };
-
                     for (const auto& neighbour_assignment : neighbours) {
-                        if (assignment_equal(neighbour_assignment, incumbent.assignment)) {
-                            continue;
-                        }
-
+                        if (eval_budget == 0) break;
+                        if (assignment_equal(neighbour_assignment, incumbent.assignment)) continue;
+                        --eval_budget;
                         auto candidate_solution = evaluate_assignment_portfolio(
-                            instance,
-                            matrix,
-                            salesmen_per_depot,
-                            neighbour_assignment,
-                            rng
+                            instance, matrix, salesmen_per_depot, neighbour_assignment, rng
                         );
-                        if (!candidate_solution.has_value()) {
-                            continue;
-                        }
-
+                        if (!candidate_solution.has_value()) continue;
                         if (solution_better_than(*candidate_solution, incumbent.solution)) {
                             incumbent.assignment = neighbour_assignment;
                             incumbent.solution = std::move(*candidate_solution);
@@ -2267,11 +2280,8 @@ struct AssignmentIncumbent {
                 }
             }
         }
-
 restart_pass:
-        if (!improved) {
-            break;
-        }
+        if (!improved) break;
     }
 
     return incumbent;
@@ -2305,10 +2315,15 @@ restart_pass:
 
     std::vector<std::vector<depot_id_t>> assignment_candidates;
     assignment_candidates.push_back(assign_customers_to_nearest_depots(instance, matrix));
-    assignment_candidates.push_back(assign_customers_to_depots_balanced(instance, matrix, depot_customer_caps, rng));
+    if (instance.customer_count() > kFastSmallInstanceThreshold) {
+        assignment_candidates.push_back(assign_customers_to_depots_balanced(instance, matrix, depot_customer_caps, rng));
+    }
 
     for (const depot_id_t depot : dominant_depot_sequence(instance, matrix)) {
         assignment_candidates.push_back(assign_all_customers_to_single_depot(instance, depot));
+        if (instance.customer_count() <= kFastSmallInstanceThreshold) {
+            break;
+        }
     }
 
     std::vector<std::vector<depot_id_t>> unique_assignments;
