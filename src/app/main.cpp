@@ -144,6 +144,50 @@ std::string canonical_algorithm_id(std::string_view value) {
         return "lkh_mdmtsp_v5_portfolio";
     }
 
+    if (value == "simulated_annealing_v1") {
+        return "simulated_annealing_v1";
+    }
+
+    if (value == "hgs_light_weight_v1") {
+        return "hgs_light_weight_v1";
+    }
+
+    if (value == "hgs_lightweight_v1") {
+        return "hgs_lightweight_v1";
+    }
+
+    if (value == "simulated_annealing_v2") {
+        return "simulated_annealing_v2";
+    }
+
+    if (value == "simulated_annealing_v3") {
+        return "simulated_annealing_v3";
+    }
+
+    if (value == "simulated_annealing_v4") {
+        return "simulated_annealing_v4";
+    }
+
+    if (value == "simulated_annealing_v5") {
+        return "simulated_annealing_v5";
+    }
+
+    if (value == "hgs_lightweight_v2") {
+        return "hgs_lightweight_v2";
+    }
+
+    if (value == "hgs_lightweight_v3") {
+        return "hgs_lightweight_v3";
+    }
+
+    if (value == "hgs_lightweight_v4") {
+        return "hgs_lightweight_v4";
+    }
+
+    if (value == "hgs_lightweight_v5") {
+        return "hgs_lightweight_v5";
+    }
+
     throw std::invalid_argument("unsupported algorithm: " + std::string(value));
 }
 
@@ -566,6 +610,50 @@ mdmtsp::MDMTSPSolution solve_with_algorithm(const std::string& algorithm_id,
 
     if (algorithm_id == "lkh_mdmtsp_v5_portfolio") {
         return mdmtsp::solve_mdmtsp_lkh_mdmtsp_v5_portfolio(instance, rng);
+    }
+
+    if (algorithm_id == "simulated_annealing_v1") {
+        return mdmtsp::solve_mdmtsp_simulated_annealing_v1(instance, rng);
+    }
+
+    if (algorithm_id == "hgs_light_weight_v1") {
+        return mdmtsp::solve_mdmtsp_hgs_light_weight_v1(instance, rng);
+    }
+
+    if (algorithm_id == "hgs_lightweight_v1") {
+        return mdmtsp::solve_mdmtsp_hgs_lightweight_v1(instance, rng);
+    }
+
+    if (algorithm_id == "simulated_annealing_v2") {
+        return mdmtsp::solve_mdmtsp_simulated_annealing_v2(instance, rng);
+    }
+
+    if (algorithm_id == "simulated_annealing_v3") {
+        return mdmtsp::solve_mdmtsp_simulated_annealing_v3(instance, rng);
+    }
+
+    if (algorithm_id == "simulated_annealing_v4") {
+        return mdmtsp::solve_mdmtsp_simulated_annealing_v4(instance, rng);
+    }
+
+    if (algorithm_id == "simulated_annealing_v5") {
+        return mdmtsp::solve_mdmtsp_simulated_annealing_v5(instance, rng);
+    }
+
+    if (algorithm_id == "hgs_lightweight_v2") {
+        return mdmtsp::solve_mdmtsp_hgs_lightweight_v2(instance, rng);
+    }
+
+    if (algorithm_id == "hgs_lightweight_v3") {
+        return mdmtsp::solve_mdmtsp_hgs_lightweight_v3(instance, rng);
+    }
+
+    if (algorithm_id == "hgs_lightweight_v4") {
+        return mdmtsp::solve_mdmtsp_hgs_lightweight_v4(instance, rng);
+    }
+
+    if (algorithm_id == "hgs_lightweight_v5") {
+        return mdmtsp::solve_mdmtsp_hgs_lightweight_v5(instance, rng);
     }
 
     throw std::invalid_argument("unsupported algorithm: " + algorithm_id);
